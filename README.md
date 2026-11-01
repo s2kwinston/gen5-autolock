@@ -45,6 +45,36 @@ yourself, fires at most once per stop (with a small bounded retry), and stands d
 for the rest of that stop. It arms only after it has seen a real drive, so it can't be
 fooled by the head unit waking as you walk up to the car.
 
+## How to use (plain-language walkthrough)
+
+**Set it up — once.**
+1. Get `gen5.autolock.zip` (from the Releases page, or build it with `build-package.sh`),
+   put it on a USB stick with a `type=install` `NEMESIS.data` (see
+   [`package/README.md`](package/README.md)).
+2. Start the car, wait for the screen to fully load, insert the stick, tap **Yes**.
+3. It's now installed and **starts by itself every time you start the car.** It begins in
+   **TEST MODE** — it runs and writes a log but **does not lock yet**.
+
+**Switch it on for real — once, after you've watched it.**
+4. Drive normally a few times. (It's just logging to `/data/nemesis/gen5-autolock.log`.)
+5. When you're happy, use the **config stick** (see [`config-stick/`](config-stick/)) to set
+   `DRY_RUN=0`. Now it locks for real.
+
+**Every drive — automatic, no USB.**
+6. Park, switch off, get out, close the door → it locks itself about `LOCK_DELAY` seconds
+   later (30 by default). Nothing to insert. This keeps working across reboots.
+
+**Change a setting — anytime.** Edit the file on the **config stick** (e.g.
+`LOCK_DELAY=45`) and insert it. That's a tiny settings update, *not* a reinstall; the
+setting sticks. Full steps are on the stick's `README.txt`.
+
+**Turn it off / pause.** Open the NEMESIS Manager (triple-press the **Nav** button) →
+**Services → `autolock` → Stop** (starts again next boot), or **Packages → Launch** to
+pause until you Launch again. Or `ENABLED=0` on the config stick to disable it for good.
+
+> ⚠️ Keep a **spare key outside the car** — it can lock a key inside (see
+> [Safety](#-safety--read-this-first)).
+
 ## Compatibility
 
 | | |
@@ -110,20 +140,19 @@ boot launch. See [`install/persistence.md`](install/persistence.md).
 
 ## Configure
 
-**You don't need to edit the script.** Copy the example config next to `walkaway.sh`
-and change what you want — it survives script updates:
-
-```sh
-cp gen5-autolock.conf.example gen5-autolock.conf
-# edit gen5-autolock.conf, e.g. LOCK_DELAY=45
-```
+**You never edit the script.** Settings live in a config file at
+`/data/nemesis/gen5-autolock.conf`. The easy way to change it on the car (no PC plugged
+in, no shell) is the **[config stick](config-stick/)**: edit the plain-text file on your
+computer, put it on a USB stick, insert it — a one-shot script copies it into place and
+restarts the service. It's a settings update, not a reinstall, and it persists.
+(Running standalone? The daemon also reads a `gen5-autolock.conf` next to `walkaway.sh`.)
 
 Out-of-range or non-numeric values are ignored and the built-in default is used, so a
-typo can't make it misbehave. The knobs:
+typo can't make it misbehave — and the file is **parsed, never executed**. The knobs:
 
 | Knob | Default | Purpose |
 |---|---|---|
-| `LOCK_DELAY` | `30` | Seconds after the last door closes before locking (5–600). |
+| `LOCK_DELAY` | `30` | Seconds after the last door closes before locking (5–600; but keep ≤ ~120 — the screen only stays awake ~2–3 min after switch-off, so a longer wait can miss the lock). |
 | `DRY_RUN` | `1` | `1` = log `WOULD FIRE`, send no lock (safe). Set `0` to actually arm. |
 | `ENABLED` | `1` | `0` = installed but inactive — stands down, never locks. |
 | `DRIVER_DOOR_ONLY` | `1` | `1` = arm only on a driver-door exit; `0` = any door. |

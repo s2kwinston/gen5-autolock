@@ -1,0 +1,4 @@
+# Normalize line endings to LF on checkout, on every platform.
+# walkaway.sh runs on the head unit; a CRLF shebang (#!/system/bin/sh\r) breaks it.
+* text=auto eol=lf
+*.sh text eol=lf

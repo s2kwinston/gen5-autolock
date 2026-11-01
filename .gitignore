@@ -1,0 +1,16 @@
+# Runtime output
+*.log
+
+# Local framework copies for the hash gate — proprietary, user-supplied, never commit
+ref/*.odex
+
+# User's live config (ship only the .example)
+gen5-autolock.conf
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

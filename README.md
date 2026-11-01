@@ -57,20 +57,23 @@ fooled by the head unit waking as you walk up to the car.
 
 **Switch it on for real — once, after you've watched it.**
 4. Drive normally a few times. (It's just logging to `/data/nemesis/gen5-autolock.log`.)
-5. When you're happy, use the **config stick** (see [`config-stick/`](config-stick/)) to set
-   `DRY_RUN=0`. Now it locks for real.
+5. When you're happy, insert the **GO LIVE** stick (`usb-sticks/go-live/`) and tap Yes.
+   Now it locks for real. (The **TEST MODE** stick, `usb-sticks/test-mode/`, puts it back
+   to logging-only anytime.)
 
 **Every drive — automatic, no USB.**
 6. Park, switch off, get out, close the door → it locks itself about `LOCK_DELAY` seconds
    later (30 by default). Nothing to insert. This keeps working across reboots.
 
-**Change a setting — anytime.** Edit the file on the **config stick** (e.g.
-`LOCK_DELAY=45`) and insert it. That's a tiny settings update, *not* a reinstall; the
-setting sticks. Full steps are on the stick's `README.txt`.
+**Change the timer / other settings — anytime.** Use the **custom-settings** stick
+(`usb-sticks/custom-settings/`): edit `LOCK_DELAY=45` (etc.) in its text file and insert
+it. That's a tiny settings update, *not* a reinstall; the setting sticks. Full steps are
+on each stick's `README.txt`.
 
 **Turn it off / pause.** Open the NEMESIS Manager (triple-press the **Nav** button) →
 **Services → `autolock` → Stop** (starts again next boot), or **Packages → Launch** to
-pause until you Launch again. Or `ENABLED=0` on the config stick to disable it for good.
+pause until you Launch again. Or use the **TEST MODE** stick (logs only), or `ENABLED=0`
+in the settings to disable it for good.
 
 > ⚠️ Keep a **spare key outside the car** — it can lock a key inside (see
 > [Safety](#-safety--read-this-first)).
@@ -141,11 +144,18 @@ boot launch. See [`install/persistence.md`](install/persistence.md).
 ## Configure
 
 **You never edit the script.** Settings live in a config file at
-`/data/nemesis/gen5-autolock.conf`. The easy way to change it on the car (no PC plugged
-in, no shell) is the **[config stick](config-stick/)**: edit the plain-text file on your
-computer, put it on a USB stick, insert it — a one-shot script copies it into place and
-restarts the service. It's a settings update, not a reinstall, and it persists.
-(Running standalone? The daemon also reads a `gen5-autolock.conf` next to `walkaway.sh`.)
+`/data/nemesis/gen5-autolock.conf`, changed on the car (no PC plugged in, no shell) with
+a USB stick from **[`usb-sticks/`](usb-sticks/)** — insert, tap Yes, done:
+
+| Stick | What it does |
+|---|---|
+| `usb-sticks/go-live/` | Switch to LIVE (really locks). Keeps your other settings. |
+| `usb-sticks/test-mode/` | Switch to TEST MODE (runs, logs, never locks). Keeps your other settings. |
+| `usb-sticks/custom-settings/` | Edit the plain-text file (e.g. `LOCK_DELAY=45`) and insert — sets any knob. |
+
+Each is a tiny settings update, not a reinstall, and it persists. Pre-zipped copies for
+a Release are produced by `build-sticks.sh`. (Running standalone? The daemon also reads a
+`gen5-autolock.conf` next to `walkaway.sh`.)
 
 Out-of-range or non-numeric values are ignored and the built-in default is used, so a
 typo can't make it misbehave — and the file is **parsed, never executed**. The knobs:

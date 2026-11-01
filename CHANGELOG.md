@@ -31,10 +31,13 @@ not battle-hardened.
   persistent config and clean up on removal.
 - `docs/design.md` — full design: the measured facts, state machine, pre-checks, timing
   margins, the lock command, persistence, and limitations.
-- **Config stick** (`config-stick/`) — a USB `type=execute` helper to change settings on
-  the car with no PC-at-the-car and no shell: edit the plain-text `gen5-autolock.conf`,
-  insert the stick, and `apply-config.sh` copies it into `/data/nemesis/` and restarts the
-  service. Includes a non-technical `README.txt`. (Settings update, not a reinstall.)
+- **USB setting sticks** (`usb-sticks/`, built into per-stick zips by `build-sticks.sh`) —
+  change settings on the car with no PC-at-the-car and no shell; each is a `type=execute`
+  one-shot, a settings update (not a reinstall), and persists:
+  - `go-live/` and `test-mode/` — one-tap flip between LIVE and TEST MODE (`DRY_RUN`),
+    editing only that line and keeping your other settings.
+  - `custom-settings/` — edit a plain-text file to set any knob (e.g. `LOCK_DELAY`).
+  Each ships a non-technical `README.txt`.
 - `install/persistence.md` — boot-start via the NEMESIS package (plus manual fallbacks).
 - `ref/` — where you place your own head unit's framework for the hash gate (proprietary
   binaries are never shipped here).

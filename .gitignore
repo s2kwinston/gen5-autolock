@@ -7,8 +7,9 @@ ref/*.odex
 # User's live config at the repo root (ship only the .example and the config-stick template)
 /gen5-autolock.conf
 
-# Built package artifact (produced by build-package.sh)
+# Built artifacts (produced by build-package.sh / build-sticks.sh)
 gen5.autolock.zip
+gen5-autolock-*.zip
 
 # OS / editor cruft
 .DS_Store

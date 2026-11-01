@@ -2,13 +2,17 @@
 # postinstall — runs after the tree is copied and the service registered.
 # cwd = /data/nemesis/apps/gen5.autolock
 export PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
+umask 077                      # anything we create is owner-only
 ND=/data/nemesis
 mkdir -p "$ND" 2>/dev/null
 
 # Seed a persistent, update-surviving config the user can edit. Never clobber
-# an existing one (keep their settings across updates).
+# an existing one (keep their settings across updates). Lock it down: the daemon
+# reads it as root, so it should not be group-/world-writable (defense in depth —
+# the daemon also only parses known keys, never executes the file).
 if [ ! -f "$ND/gen5-autolock.conf" ] && [ -f gen5-autolock.conf.example ]; then
     cp gen5-autolock.conf.example "$ND/gen5-autolock.conf"
+    chmod 600 "$ND/gen5-autolock.conf" 2>/dev/null
 fi
 
 echo "gen5-autolock installed."

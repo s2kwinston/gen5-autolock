@@ -5,15 +5,16 @@
 #
 #     cp gen5-autolock.conf.example gen5-autolock.conf
 #
-# It is plain shell, sourced by the daemon as root — keep it root-owned and put
-# only the knobs below in it. Out-of-range or non-numeric values are ignored and
-# the built-in default is used instead. Uncomment a line to change it.
+# Format: one KEY=value per line; '#' comments on their own line. The daemon
+# PARSES only the known keys below and never executes this file, so it can't run
+# code even as root. Out-of-range or non-numeric values are ignored and the
+# built-in default is used instead. Uncomment a line to change it.
 
 # -- the main one: how long after the last door closes before it locks (seconds)
 # LOCK_DELAY=30          # allowed 5–600
 
 # -- turn the feature off without stopping the daemon (also: touch the off-file,
-#    /data/local/tmp/gen5-autolock.off, to pause and delete it to resume)
+#    /data/nemesis/gen5-autolock.off, to pause and delete it to resume)
 # ENABLED=1              # 0 = installed but inactive
 
 # -- send real locks. KEEP THIS 0 (dry-run) until you've watched the log over

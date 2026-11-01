@@ -259,8 +259,9 @@ script — no `app_process`/Java is required.
 ## 9. Config & control
 
 ### Config file
-Rather than editing the script, use a `gen5-autolock.conf` (plain `KEY=value` sh, sourced
-at startup) to override any knob. The daemon reads, in order: `$GEN5_CONF`, then
+Rather than editing the script, use a `gen5-autolock.conf` (one `KEY=value` per line,
+**parsed** for known keys at startup — never executed, so a writable config can't run
+code as root) to override any knob. The daemon reads, in order: `$GEN5_CONF`, then
 `/data/nemesis/gen5-autolock.conf` (persistent, survives package updates — the package
 seeds it there), then one beside the script. Every value is **range-clamped** after
 loading, so an out-of-range or non-numeric entry falls back to the default rather than

@@ -21,9 +21,10 @@
 #    - PERSISTENCE IS YOURS TO CHOOSE. Something must start this at each boot
 #      (an init service, etc.) — not included here. See docs §7.
 #
-#  CONFIGURE without editing this file: drop a `gen5-autolock.conf` next to the
-#  script (see gen5-autolock.conf.example) to override any knob below.
-#  TURN OFF without stopping it: `touch /data/local/tmp/gen5-autolock.off`
+#  CONFIGURE without editing this file: put a `gen5-autolock.conf` at
+#  /data/nemesis/ (or beside the script) to override any knob below — see
+#  gen5-autolock.conf.example. It is PARSED for known keys, never executed.
+#  TURN OFF without stopping it: `touch /data/nemesis/gen5-autolock.off`
 #  (delete the file to resume), or set ENABLED=0 in the config.
 #
 #  Full rationale, state machine and pre-check table: docs/design.md
@@ -83,12 +84,35 @@ say() {
 # make sure the log / pause-flag directories exist (harmless if they already do)
 mkdir -p "$NEMESIS_DIR" "${LOG%/*}" "${OFF_FILE%/*}" 2>/dev/null
 
-# ---- load user config (optional; survives script updates) --------------------
-# The config file is plain KEY=value sh, sourced as root — keep it root-owned and
-# only put the documented knobs in it. See gen5-autolock.conf.example.
-if [ -f "$CONF" ]; then
-    . "$CONF" 2>/dev/null && say "loaded config: $CONF" || say "WARN: could not source $CONF — using defaults"
-fi
+# ---- load user config (optional; survives updates) --------------------------
+# PARSED, not sourced. We read ONLY the documented KEY=value knobs and ignore
+# every other line, so the config can never execute code as root — even if some
+# other process managed to write it. Values are range-checked below regardless.
+load_config() {
+    [ -f "$CONF" ] || return 0
+    CR=$(printf '\r')
+    while read -r line || [ -n "$line" ]; do
+        line=${line%"$CR"}                        # tolerate CRLF
+        case "$line" in ''|\#*|';'*) continue ;; esac
+        case "$line" in *=*) : ;; *) continue ;; esac   # must be KEY=value
+        key=${line%%=*}; val=${line#*=}
+        case "$key" in
+            POLL_DRIVE)        POLL_DRIVE=$val ;;
+            POLL_ACTIVE)       POLL_ACTIVE=$val ;;
+            LOCK_DELAY)        LOCK_DELAY=$val ;;
+            POST_FIRE_CONFIRM) POST_FIRE_CONFIRM=$val ;;
+            MAX_FIRES)         MAX_FIRES=$val ;;
+            DRIVER_DOOR_ONLY)  DRIVER_DOOR_ONLY=$val ;;
+            MIN_ACC)           MIN_ACC=$val ;;
+            DRY_RUN)           DRY_RUN=$val ;;
+            ENABLED)           ENABLED=$val ;;
+            CHECK_ODEX)        CHECK_ODEX=$val ;;
+            *) say "config: ignoring unknown key '$key'" ;;
+        esac
+    done < "$CONF"
+    say "loaded config: $CONF"
+}
+load_config
 
 # ---- sanitize every knob so a bad config value can never misbehave ----------
 clampnum() { # value lo hi default -> sanitized integer
@@ -180,6 +204,7 @@ odex_gate() {
 say "==== gen5-autolock starting (pid $$)"
 say "device=$(getprop ro.product.device) sw=$(getprop ro.build.product)"
 say "config: lock_delay=${LOCK_DELAY}s dry_run=$DRY_RUN enabled=$ENABLED driver_door_only=$DRIVER_DOOR_ONLY max_fires=$MAX_FIRES"
+say "paths: conf=$CONF off_file=$OFF_FILE log=$LOG"
 
 odex_gate || exit 1
 

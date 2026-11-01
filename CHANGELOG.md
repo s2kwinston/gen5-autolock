@@ -15,10 +15,10 @@ not battle-hardened.
   framework odex hash gate.
 - `DRY_RUN` mode (default on) — logs `WOULD FIRE` and sends no lock, for field-testing
   across real drives before arming.
-- **External config file** (`gen5-autolock.conf`, sourced from next to the script) — set
-  `LOCK_DELAY` and every other knob without editing the daemon; survives updates. Values
-  are range-clamped, so a bad entry falls back to the default instead of misbehaving. See
-  `gen5-autolock.conf.example`.
+- **External config file** (`gen5-autolock.conf`) — set `LOCK_DELAY` and every other knob
+  without editing the daemon; survives updates. It is **parsed** for known `KEY=value`
+  keys, never executed (a writable config can't run code as root). Values are
+  range-clamped, so a bad entry falls back to the default. See `gen5-autolock.conf.example`.
 - **Runtime on/off toggle** — `touch /data/local/tmp/gen5-autolock.off` to pause (stands
   down, never locks) and delete it to resume; no restart needed. `ENABLED=0` does the
   same permanently.
@@ -39,6 +39,12 @@ not battle-hardened.
 - Pause-flag and log moved to **`/data/nemesis/`** (persists across reboots) from
   `/data/local/tmp/` (which NEMESIS wipes on every reboot). Config is read from
   `/data/nemesis/gen5-autolock.conf` when present, so it survives package updates.
+
+### Security
+- Config is **parsed, not sourced** — a config writable by another process cannot execute
+  code in the root daemon. Install hooks `umask 077` and `chmod 600` the seeded config.
+- Startup logs the effective config / pause-flag / log paths, so a stale or wrong pause
+  path can't silently fail-open (you think it's paused while it keeps locking).
 
 ### Known limitations
 - **No key-inside protection.** The lock path has no interlock and the head unit

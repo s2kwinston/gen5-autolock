@@ -1,0 +1,26 @@
+[nemesis]
+version=0.1.0
+id=gen5.autolock
+name=Gen5 Auto-Lock (walk-away)
+types=application,service
+preinstall=scripts/pre.sh
+postinstall=scripts/post.sh
+preuninstall=scripts/preun.sh
+postuninstall=scripts/postun.sh
+
+; Packages -> "Launch" runs this: flips the pause flag (pause <-> resume).
+[app.0]
+kind=sh
+path=bin/toggle.sh
+uid=root
+
+; The daemon. Registered as a service so NEMESIS starts it at every boot.
+; mode=background: start once per boot, do NOT auto-restart — matches the daemon's
+; design of exiting cleanly when the head unit powers down. Services -> Start/Stop
+; in the Manager is then a clean enable/disable for the session.
+[service.0]
+name=autolock
+kind=sh
+path=walkaway.sh
+uid=root
+mode=background

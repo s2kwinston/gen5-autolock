@@ -1,0 +1,24 @@
+#!/system/bin/sh
+# postinstall — runs after the tree is copied and the service registered.
+# cwd = /data/nemesis/apps/gen5.autolock
+export PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
+ND=/data/nemesis
+mkdir -p "$ND" 2>/dev/null
+
+# Seed a persistent, update-surviving config the user can edit. Never clobber
+# an existing one (keep their settings across updates).
+if [ ! -f "$ND/gen5-autolock.conf" ] && [ -f gen5-autolock.conf.example ]; then
+    cp gen5-autolock.conf.example "$ND/gen5-autolock.conf"
+fi
+
+echo "gen5-autolock installed."
+echo "  * SHIPS IN DRY-RUN — it logs 'WOULD FIRE' and sends NO lock. Watch"
+echo "    $ND/gen5-autolock.log across a few real drives, then set DRY_RUN=0"
+echo "    in $ND/gen5-autolock.conf to arm it."
+echo "  * KEEP A SPARE KEY OUTSIDE THE CAR. There is no key-inside protection;"
+echo "    it can lock a key inside. Never rely on it with a person/pet inside."
+echo "  * Framework hash gate: put automotive.odex + automotive-service.odex in"
+echo "    $(pwd)/ref/ , or set CHECK_ODEX=0 in the config. See ref/README.md."
+echo "  * Toggle from NEMESIS Manager (triple-press Nav): Services -> autolock ->"
+echo "    Start/Stop, or Packages -> Gen5 Auto-Lock -> Launch (pause/resume)."
+exit 0

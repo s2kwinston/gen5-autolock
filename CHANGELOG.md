@@ -24,11 +24,21 @@ not battle-hardened.
   same permanently.
 - **Trunk/liftgate-aware arming** — won't lock while the liftgate reads open, and *holds*
   (without demanding a fresh driver exit) while you load cargo, resuming when it closes.
+- **NEMESIS package** (`package/` + `build-package.sh`, id `gen5.autolock`) — the normal
+  install path. Registers the daemon as a service so NEMESIS starts it at **every boot**
+  (no `/system` init hacking), and exposes an **on-screen toggle in the NEMESIS Manager**
+  (Services → Start/Stop, or Packages → Launch). Install/uninstall lifecycle hooks seed a
+  persistent config and clean up on removal.
 - `docs/design.md` — full design: the measured facts, state machine, pre-checks, timing
-  margins, the lock command, persistence options, and limitations.
-- `install/persistence.md` — options for starting the daemon at each head-unit boot.
+  margins, the lock command, persistence, and limitations.
+- `install/persistence.md` — boot-start via the NEMESIS package (plus manual fallbacks).
 - `ref/` — where you place your own head unit's framework for the hash gate (proprietary
   binaries are never shipped here).
+
+### Changed
+- Pause-flag and log moved to **`/data/nemesis/`** (persists across reboots) from
+  `/data/local/tmp/` (which NEMESIS wipes on every reboot). Config is read from
+  `/data/nemesis/gen5-autolock.conf` when present, so it survives package updates.
 
 ### Known limitations
 - **No key-inside protection.** The lock path has no interlock and the head unit

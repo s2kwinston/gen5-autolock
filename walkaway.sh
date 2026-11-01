@@ -60,19 +60,28 @@ ENABLED=1              # 0 = installed but inactive (stands down, never arms)
 CHECK_ODEX=1           # 1 = refuse to run if the framework hash changed
 
 # ---- paths ----
+# Default under /data/nemesis, which SURVIVES reboot. NOT /data/local/tmp — NEMESIS
+# clears that on every reboot, which would drop the pause state and the log.
 SELF=${0%/*}
-LOG=${GEN5_LOG:-${WALKAWAY_LOG:-/data/local/tmp/gen5-autolock.log}}
-REF=${GEN5_REF:-${WALKAWAY_REF:-$SELF/ref}}        # place analyzed odex here
-CONF=${GEN5_CONF:-$SELF/gen5-autolock.conf}        # optional overrides (sourced sh)
-OFF_FILE=${GEN5_OFF:-/data/local/tmp/gen5-autolock.off}  # touch to pause; rm to resume
+NEMESIS_DIR=/data/nemesis
+LOG=${GEN5_LOG:-${WALKAWAY_LOG:-$NEMESIS_DIR/gen5-autolock.log}}
+OFF_FILE=${GEN5_OFF:-$NEMESIS_DIR/gen5-autolock.off}   # pause flag; survives reboot
+REF=${GEN5_REF:-${WALKAWAY_REF:-$SELF/ref}}            # analyzed odex for the hash gate
 AUTOMOTIVE_ODEX=/system/framework/automotive.odex
 AUTOMOTIVE_SVC_ODEX=/system/framework/automotive-service.odex
+# config: prefer a persistent file that survives package updates; else one beside the script
+if [ -n "$GEN5_CONF" ]; then CONF=$GEN5_CONF
+elif [ -f "$NEMESIS_DIR/gen5-autolock.conf" ]; then CONF=$NEMESIS_DIR/gen5-autolock.conf
+else CONF=$SELF/gen5-autolock.conf; fi
 
 say() {
     LINE="$(date '+%Y-%m-%d %H:%M:%S') $*"
     echo "$LINE"
     echo "$LINE" >> "$LOG" 2>/dev/null
 }
+
+# make sure the log / pause-flag directories exist (harmless if they already do)
+mkdir -p "$NEMESIS_DIR" "${LOG%/*}" "${OFF_FILE%/*}" 2>/dev/null
 
 # ---- load user config (optional; survives script updates) --------------------
 # The config file is plain KEY=value sh, sourced as root — keep it root-owned and

@@ -1,43 +1,44 @@
 # Persistence — starting the daemon at boot
 
-The daemon has to be **running before you switch the car off**, so it must start on
-every head-unit boot. The head unit boots when you unlock/approach the car, so a
-process launched at boot is up through the whole drive and into the switch-off window.
+The daemon has to be running **before you switch the car off**, so it must start on
+every head-unit boot.
 
-No persistence mechanism is bundled, because it is a `/system`/init change that depends
-on your NEMESIS setup and is its own decision to make. The options below are in rough
-order of preference.
+## Recommended: install it as a NEMESIS package
 
-## Options
+The normal way is to install gen5-autolock as a **NEMESIS package** — then NEMESIS's
+own service manager starts it at every boot and you don't touch `/system` yourself.
+This is the supported mechanism and it's what the catalog packages use.
 
-1. **init service / `init.d` hook (preferred).** Start the script at boot from an init
-   service, the same class of mechanism other NEMESIS mods use. Clean and supervised,
-   but it requires modifying `/system` (or the init ramdisk) — a change you should make
-   deliberately and be able to undo.
+- The package registers the daemon as a **service** (`mode=background`: started once
+  per boot, no auto-restart — which matches the daemon exiting cleanly when the head
+  unit powers down).
+- NEMESIS's watchdog (launched at cold boot and QuickBoot) starts the service manager,
+  which starts registered services. So the daemon comes up on its own each drive.
+- You can enable/disable it from the **NEMESIS Manager** (Services → `autolock` →
+  Start/Stop) or pause/resume it (Packages → Launch).
 
-2. **Piggyback an existing boot hook.** If your setup already runs a startup script at
-   boot (for another NEMESIS mod), add a line there to launch `walkaway.sh` in the
-   background. No new kind of `/system` change beyond what you already have.
+Build and install: see [`../package/README.md`](../package/README.md).
 
-3. **USB stick present at boot (not preferred).** NEMESIS can run a stick's payload at
-   boot. This is fragile (leaves a stick in the port, and a stick present at boot runs
-   as root with no prompt) and is not recommended for a locking daemon.
+## Manual alternatives (only if you're not using the package)
 
-## However you start it
+If you run `walkaway.sh` standalone instead of installing the package, something still
+has to launch it each boot. Options, in rough order of preference:
 
-Launch it detached so it keeps running, e.g.:
+1. **A NEMESIS run-script / your own init hook** that backgrounds it:
+   ```sh
+   sh /path/to/walkaway.sh >/dev/null 2>&1 &
+   ```
+2. **Piggyback an existing boot hook** on your setup.
+3. **USB stick present at boot** — fragile and not recommended for a locking daemon.
 
-```sh
-sh /path/to/walkaway.sh >/dev/null 2>&1 &
-```
-
-It writes to `/data/local/tmp/gen5-autolock.log`. It waits for `sys.boot_completed`, runs
-the optional framework hash gate, then enters its poll loop. With `DRY_RUN=1` (default)
-it only logs what it *would* do — leave it there until the log looks right across
-several real drives, then set `DRY_RUN=0`.
+However it starts, it writes to `/data/nemesis/gen5-autolock.log` (a persistent path —
+`/data/local/tmp` is wiped on reboot), waits for `sys.boot_completed`, runs the optional
+framework hash gate, then polls. With `DRY_RUN=1` (default) it only logs what it *would*
+do — leave it there until the log looks right across several real drives, then set
+`DRY_RUN=0`.
 
 ## Undo
 
-Whatever mechanism you choose, keep it easy to reverse (remove the init service / the
-added line / the stick). A locking daemon is exactly the kind of thing you want to be
-able to switch off quickly.
+Uninstall the package (`nemesis uninstall gen5.autolock`) — or remove whatever manual
+hook you added. A locking daemon is exactly the kind of thing you want to switch off
+quickly.

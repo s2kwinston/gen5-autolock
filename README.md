@@ -77,28 +77,36 @@ rationale, the measured facts it is built on, timing margins, and limitations ar
 
 ## Install
 
-1. **Prerequisites:** NEMESIS root on a head unit matching
-   [Compatibility](#compatibility). A toolbox shell (KitKat `sh`) — no
-   `grep`/`awk`/`busybox` needed.
+**Prerequisites:** NEMESIS root on a head unit matching
+[Compatibility](#compatibility). A toolbox shell (KitKat `sh`) — no
+`grep`/`awk`/`busybox` needed.
 
-2. **Framework hash gate (recommended).** The daemon refuses to run if the vehicle
-   framework no longer matches what the lock transaction was verified against (an OTA
-   can move transaction codes and turn a "lock" into something else). Copy your head
-   unit's own framework into `ref/`:
+### Recommended: install it as a NEMESIS package
 
-   ```sh
-   cp /system/framework/automotive.odex          /path/to/ref/
-   cp /system/framework/automotive-service.odex   /path/to/ref/
-   ```
+Packaging is the normal way, and it gives you two things for free: NEMESIS **starts
+the daemon at every boot** (its own service manager — no `/system` init hacking), and
+an **on-screen toggle in the NEMESIS Manager**.
 
-   These are proprietary and stay on your device — they are **not** shipped with this
-   repo. To skip the gate (not recommended), set `CHECK_ODEX=0` at the top of the
-   script. See [`ref/README.md`](ref/README.md).
+```sh
+./build-package.sh                 # -> gen5.autolock.zip  (needs `zip`)
+```
 
-3. **Persistence.** The daemon must be running before you switch off, so it has to
-   start at each head-unit boot. That is a device-specific `/system`/init change and is
-   **not** bundled — see [`install/persistence.md`](install/persistence.md) for the
-   options and trade-offs.
+Put the zip + a `type=install` `NEMESIS.data` on a USB stick and insert it (full steps
+and the file contents in [`package/README.md`](package/README.md)). It installs to
+`/data/nemesis/apps/gen5.autolock/`, seeds your config at
+`/data/nemesis/gen5-autolock.conf`, and starts the service **in dry-run**.
+
+**Framework hash gate (recommended):** the daemon refuses to run if the vehicle
+framework no longer matches what the lock transaction was verified against (an OTA can
+move transaction codes and turn a "lock" into something else). Put your head unit's own
+`automotive.odex` + `automotive-service.odex` in
+`/data/nemesis/apps/gen5.autolock/ref/` (they're proprietary and **not** shipped here),
+or set `CHECK_ODEX=0` in the config. See [`ref/README.md`](ref/README.md).
+
+### Standalone (advanced)
+
+You can also run `walkaway.sh` directly without the package — then you arrange your own
+boot launch. See [`install/persistence.md`](install/persistence.md).
 
 ## Configure
 
@@ -126,23 +134,28 @@ typo can't make it misbehave. The knobs:
 | `MIN_ACC` | `3` | Only fire at this ACC state (off-standby). |
 | `CHECK_ODEX` | `1` | `1` = refuse to run if the framework hash changed. |
 
-### Turn it on/off without stopping it
+### Turn it on/off
 
-Toggle at runtime, no restart needed:
+**From the NEMESIS Manager** (triple-press the Nav button) — if you installed the package:
+- **Services → `autolock` → Start / Stop** — shows running/stopped state; a toggle with
+  visible status. Stop disables it for the session; it starts again next boot.
+- **Packages → Gen5 Auto-Lock → Launch** — flips a persistent pause flag that **survives
+  reboots** (stays paused until you Launch again).
+
+**From a shell** (either install mode), no restart needed:
 
 ```sh
-touch /data/local/tmp/gen5-autolock.off   # pause — stands down, won't lock
-rm    /data/local/tmp/gen5-autolock.off    # resume (re-arms on the next drive)
+touch /data/nemesis/gen5-autolock.off   # pause — stands down, won't lock
+rm    /data/nemesis/gen5-autolock.off    # resume (re-arms on the next drive)
 ```
 
 Handy when you're about to sit in the car with the key, or lending it to someone. The
-off-file survives reboots, so it stays paused until you remove it. (`ENABLED=0` in the
-config does the same thing permanently.)
+flag survives reboots. (`ENABLED=0` in the config disables it permanently.)
 
 ## Test (dry-run first)
 
-With `DRY_RUN=1` (default), start the daemon and drive normally. It writes to
-`/data/local/tmp/gen5-autolock.log`. Over a few real stops, confirm:
+With `DRY_RUN=1` (default), the daemon runs and logs but never locks. It writes to
+`/data/nemesis/gen5-autolock.log`. Over a few real stops, confirm:
 
 - it logs `WOULD FIRE` **only** after a genuine park → off → exit → doors closed;
 - it **never** logs `WOULD FIRE` at boot, while you are getting in, or with a door open;

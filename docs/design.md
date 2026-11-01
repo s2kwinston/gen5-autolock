@@ -203,9 +203,14 @@ service call com.hkmc.micom.bcm 5 i32 1   # lockDoor(true)
 ## 7. Persistence
 
 The daemon must be running before ignition-off each drive, so it has to start at each
-boot. See [`install/persistence.md`](../install/persistence.md) for options (init
-service preferred) and trade-offs. It is a lightweight polling shell script — no
-`app_process`/Java is required.
+boot. The supported way is to install it as a **NEMESIS package** that registers the
+daemon as a service (`mode=background`): NEMESIS's watchdog starts the service manager
+at boot, which starts the service — no `/system` init change of your own. `background`
+(start once per boot, no auto-restart) matches the daemon exiting cleanly at power-down.
+The Manager's Services screen then doubles as the enable/disable control. See
+[`../package/README.md`](../package/README.md) and
+[`install/persistence.md`](../install/persistence.md). It is a lightweight polling shell
+script — no `app_process`/Java is required.
 
 ---
 
@@ -254,16 +259,21 @@ service preferred) and trade-offs. It is a lightweight polling shell script — 
 ## 9. Config & control
 
 ### Config file
-Rather than editing the script, drop a `gen5-autolock.conf` (plain `KEY=value` sh,
-sourced at startup) next to it to override any knob — it survives updates. See
-`gen5-autolock.conf.example`. Every value is **range-clamped** after loading, so an
-out-of-range or non-numeric entry falls back to the default rather than misbehaving.
+Rather than editing the script, use a `gen5-autolock.conf` (plain `KEY=value` sh, sourced
+at startup) to override any knob. The daemon reads, in order: `$GEN5_CONF`, then
+`/data/nemesis/gen5-autolock.conf` (persistent, survives package updates — the package
+seeds it there), then one beside the script. Every value is **range-clamped** after
+loading, so an out-of-range or non-numeric entry falls back to the default rather than
+misbehaving.
 
 ### Runtime on/off
-`touch /data/local/tmp/gen5-autolock.off` pauses the daemon (it stands down and will not
-lock, checked every poll — no restart); delete the file to resume (it re-arms on the next
-drive). The off-file persists across reboots. `ENABLED=0` in the config is the permanent
-equivalent.
+Three ways, in order of convenience once the package is installed:
+- **Manager → Services → `autolock` → Start/Stop** — shows state; disables for the session.
+- **Manager → Packages → Launch** — runs `toggle.sh`, flipping the pause flag.
+- **Shell:** `touch /data/nemesis/gen5-autolock.off` pauses (stands down, checked every
+  poll — no restart); delete it to resume. The flag lives under `/data/nemesis` so it
+  **persists across reboots** (NOT `/data/local/tmp`, which NEMESIS wipes on reboot).
+`ENABLED=0` in the config is a permanent disable.
 
 ### Knobs
 
@@ -276,6 +286,6 @@ ENABLED=1         CHECK_ODEX=1
 ```
 
 `DRY_RUN=1` (the default) logs `WOULD FIRE` and sends **no** lock. Leave it on and watch
-`/data/local/tmp/gen5-autolock.log` across several real drives — confirm it would fire
-only on a genuine park-and-exit, and never at boot or while getting in — then set it to
-`0` to actually arm.
+`/data/nemesis/gen5-autolock.log` across several real drives — confirm it would fire only
+on a genuine park-and-exit, and never at boot or while getting in — then set it to `0` to
+actually arm.

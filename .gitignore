@@ -7,6 +7,9 @@ ref/*.odex
 # User's live config (ship only the .example)
 gen5-autolock.conf
 
+# Built package artifact (produced by build-package.sh)
+gen5.autolock.zip
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

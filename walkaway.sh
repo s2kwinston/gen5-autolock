@@ -18,8 +18,9 @@
 #      person or pet inside — it has no occupant awareness.
 #    - SHIPS IN DRY-RUN. DRY_RUN=1 by default: it logs "WOULD FIRE" and sends
 #      no lock. Watch the log across real drives first, then set DRY_RUN=0.
-#    - PERSISTENCE IS YOURS TO CHOOSE. Something must start this at each boot
-#      (an init service, etc.) — not included here. See docs §7.
+#    - PERSISTENCE: the NEMESIS package registers this as a service NEMESIS
+#      starts at every boot (no /system init change). Standalone? Arrange your
+#      own boot launch — see docs/design.md §7 and install/persistence.md.
 #
 #  CONFIGURE without editing this file: put a `gen5-autolock.conf` at
 #  /data/nemesis/ (or beside the script) to override any knob below — see
@@ -67,7 +68,11 @@ SELF=${0%/*}
 NEMESIS_DIR=/data/nemesis
 LOG=${GEN5_LOG:-${WALKAWAY_LOG:-$NEMESIS_DIR/gen5-autolock.log}}
 OFF_FILE=${GEN5_OFF:-$NEMESIS_DIR/gen5-autolock.off}   # pause flag; survives reboot
-REF=${GEN5_REF:-${WALKAWAY_REF:-$SELF/ref}}            # analyzed odex for the hash gate
+# prefer a persistent ref dir that survives package updates; else ./ref (standalone)
+if [ -n "$GEN5_REF" ]; then REF=$GEN5_REF
+elif [ -n "$WALKAWAY_REF" ]; then REF=$WALKAWAY_REF
+elif [ -f "$NEMESIS_DIR/gen5-autolock-ref/automotive.odex" ]; then REF=$NEMESIS_DIR/gen5-autolock-ref
+else REF=$SELF/ref; fi            # analyzed odex for the hash gate
 AUTOMOTIVE_ODEX=/system/framework/automotive.odex
 AUTOMOTIVE_SVC_ODEX=/system/framework/automotive-service.odex
 # config: prefer a persistent file that survives package updates; else one beside the script
@@ -90,12 +95,14 @@ mkdir -p "$NEMESIS_DIR" "${LOG%/*}" "${OFF_FILE%/*}" 2>/dev/null
 # other process managed to write it. Values are range-checked below regardless.
 load_config() {
     [ -f "$CONF" ] || return 0
-    CR=$(printf '\r')
     while read -r line || [ -n "$line" ]; do
-        line=${line%"$CR"}                        # tolerate CRLF
         case "$line" in ''|\#*|';'*) continue ;; esac
         case "$line" in *=*) : ;; *) continue ;; esac   # must be KEY=value
         key=${line%%=*}; val=${line#*=}
+        # keep only the leading digits: this strips an inline "# comment", trailing
+        # spaces and a CRLF's CR using ONLY [!0-9] (works on toolbox mksh — no printf,
+        # no [[:space:]]). Every knob is numeric; a non-numeric value becomes "" -> default.
+        val=${val%%[!0-9]*}
         case "$key" in
             POLL_DRIVE)        POLL_DRIVE=$val ;;
             POLL_ACTIVE)       POLL_ACTIVE=$val ;;
@@ -118,6 +125,7 @@ load_config
 clampnum() { # value lo hi default -> sanitized integer
     v=$1
     case "$v" in ''|*[!0-9]*) echo "$4"; return ;; esac
+    case "$v" in ???????*) echo "$4"; return ;; esac   # >7 digits: absurd -> default
     [ "$v" -lt "$2" ] && v=$2
     [ "$v" -gt "$3" ] && v=$3
     echo "$v"
@@ -166,9 +174,10 @@ doors_closed() {
     [ "$DRV" = 0 ] && [ "$PAS" = 0 ] && [ "$RL" = 0 ] && [ "$RR" = 0 ]
 }
 # Doors AND trunk/liftgate closed.
-# NOTE: mTrunkOpenedState is treated as the rear liftgate, but it was never seen
-# change on-car during testing — VERIFY it actually reads 1 when your liftgate is
-# open (open it, `dumpsys com.hkmc.micom.bcm | grep Trunk`) before trusting this.
+# NOTE: mTrunkOpenedState is treated as the rear liftgate. Firmware names its
+# source RES_TRUNK_TG_SW (tailgate switch), but it was never seen change on-car
+# during testing — VERIFY it reads 1 when your liftgate is open (watch the log
+# for "trunk/liftgate open — holding") before trusting this.
 all_closed() { doors_closed && [ "$TRUNK" = 0 ]; }
 
 # full fire-time pre-check against the CURRENT parsed cache
@@ -229,6 +238,7 @@ FIRES=0
 DEB=0            # debounce seconds accumulated
 TRUNK_HOLD=0     # paused because the trunk/liftgate is open
 PAUSED=0         # paused by the ENABLED knob / off-file toggle
+ALIVE=0          # have we seen a live ACC yet? (a cold-boot cache can read 0/1)
 
 say "entering main loop (STATE=$STATE)"
 
@@ -241,10 +251,19 @@ while :; do
         continue
     fi
 
-    # --- global: HU dying (checked even while paused, so we exit cleanly) ---
+    # mark the HU "alive" once we've seen a real ACC (off-standby/transition/on)
+    case "$ACC" in 3|4|5) ALIVE=1 ;; esac
+
+    # --- global: HU dying vs. not-yet-up ------------------------------------
+    # A low ACC (0/1) means power-down ONLY after we've seen it alive. At cold
+    # boot the cache can read 0/1 before the bus is up; exiting then would cost a
+    # whole drive (mode=background never restarts), so wait rather than exit.
     if [ "$ACC" = 0 ] || [ "$ACC" = 1 ]; then
-        say "acc=$ACC — head unit powering down. STATE=$STATE -> DEAD. exiting."
-        exit 0
+        if [ "$ALIVE" = 1 ]; then
+            say "acc=$ACC — head unit powering down. STATE=$STATE -> DEAD. exiting."
+            exit 0
+        fi
+        sleep "$POLL_DRIVE"; continue
     fi
 
     # --- runtime toggle: ENABLED=0 or the off-file pauses us (no restart) ---
@@ -292,17 +311,17 @@ while :; do
     WAIT_EXIT)
         # detect the exit: driver door (or any door) goes open->closed
         if [ "$DRIVER_DOOR_ONLY" = 1 ]; then
-            if [ "$PREV_DRV" = 1 ] && [ "$DRV" = 0 ]; then EXIT_SEEN=1; say "exit seen (driver door closed)"; fi
+            if [ "$PREV_DRV" = 1 ] && [ "$DRV" = 0 ]; then EXIT_SEEN=1; say "exit seen (driver door closed)  [drv=$DRV pas=$PAS rl=$RL rr=$RR trunk=$TRUNK]"; fi
             PREV_DRV=$DRV
         else
             ANY=0; { [ "$DRV" = 1 ] || [ "$PAS" = 1 ] || [ "$RL" = 1 ] || [ "$RR" = 1 ]; } && ANY=1
-            if [ "$PREV_ANY" = 1 ] && [ "$ANY" = 0 ]; then EXIT_SEEN=1; say "exit seen (a door closed)"; fi
+            if [ "$PREV_ANY" = 1 ] && [ "$ANY" = 0 ]; then EXIT_SEEN=1; say "exit seen (a door closed)  [drv=$DRV pas=$PAS rl=$RL rr=$RR trunk=$TRUNK]"; fi
             PREV_ANY=$ANY
         fi
 
         if [ "$EXIT_SEEN" = 1 ] && [ "$ACC" = "$MIN_ACC" ] && [ "$LOCK" = 1 ] && all_closed; then
             STATE=ARMED; DEB=0; TRUNK_HOLD=0
-            say "ARMED — debounce ${LOCK_DELAY}s (acc=$ACC lock=$LOCK)"
+            say "ARMED — debounce ${LOCK_DELAY}s (acc=$ACC lock=$LOCK trunk=$TRUNK doors=$DRV$PAS$RL$RR)"
         fi
         ;;
 
@@ -311,9 +330,13 @@ while :; do
             say "already locked (lock=0) — standing down. STATE=DONE"
             STATE=DONE
         elif ! doors_closed; then
-            # A DOOR reopened — someone may have climbed back in. Require a
-            # genuinely fresh driver exit before we can arm again.
-            say "a door reopened — back to WAIT_EXIT (need a fresh driver exit)"
+            # A DOOR reopened. Go back to WAIT_EXIT for another driver-door
+            # open->close. NOTE: this is NOT occupant protection — if someone
+            # climbs back IN via the driver door and shuts it, that reads as a
+            # fresh exit and we WILL arm and lock with them inside after the
+            # debounce. Pause the daemon before sitting in a switched-off car;
+            # the interior handle always opens a locked door from within.
+            say "a door reopened — back to WAIT_EXIT (waiting for a driver-door cycle)"
             STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; TRUNK_HOLD=0; PREV_DRV=$DRV
         elif [ "$TRUNK" != 0 ]; then
             # Trunk/liftgate open but all doors closed = cargo access, not

@@ -11,13 +11,13 @@
 # built-in default is used instead. Uncomment a line to change it.
 
 # -- the main one: how long after the last door closes before it locks (seconds)
-# LOCK_DELAY=30          # allowed 5–600
+# LOCK_DELAY=30          # allowed 5–600; keep ≤ ~90 (real wait ≈ 1.3–1.8× this)
 
 # -- turn the feature off without stopping the daemon (also: touch the off-file,
 #    /data/nemesis/gen5-autolock.off, to pause and delete it to resume)
 # ENABLED=1              # 0 = installed but inactive
 
-# -- send real locks. KEEP THIS 0 (dry-run) until you've watched the log over
+# -- send real locks. KEEP THIS 1 (dry-run) until you've watched the log over
 #    several real drives and it only ever "WOULD FIRE" on a genuine park-and-exit.
 # DRY_RUN=1              # 1 = log only, 0 = actually lock
 

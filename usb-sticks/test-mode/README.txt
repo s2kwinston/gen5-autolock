@@ -10,7 +10,9 @@ to quickly "disarm" the auto-lock without uninstalling. Your lock-delay and any
 other settings are kept.
 
 You'll see a generic "Operation completed successfully" message (that wording is
-the car's, not ours). NEMESIS Manager -> Logs will show "set DRY_RUN=1 -> TEST".
+the car's, not ours, and looks the same for every stick). The new mode is saved
+and takes effect right away. The daemon records it in its own log at
+/data/nemesis/gen5-autolock.log (its next start-up line reads "dry_run=1" = TEST).
 
 Remove the stick after the success message.
 

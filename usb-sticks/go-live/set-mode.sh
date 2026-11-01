@@ -10,6 +10,10 @@ SELF=${0%/*}
 CFG=${GEN5_CONF:-/data/nemesis/gen5-autolock.conf}
 LOG=${GEN5_LOG:-/data/nemesis/gen5-autolock.log}
 say() { echo "$*"; echo "$(date '+%Y-%m-%d %H:%M:%S') [set-mode] $*" >> "$LOG" 2>/dev/null; }
+# write one line WITHOUT printf (this HU's toolbox/mksh has none). echo is a
+# builtin on mksh and bash; our config lines never start with '-' or contain a
+# backslash, so echo reproduces them verbatim.
+putline() { echo "$1"; }
 
 want=$(cat "$SELF/MODE" 2>/dev/null)
 case "$want" in
@@ -20,20 +24,23 @@ esac
 
 mkdir -p "${CFG%/*}" 2>/dev/null
 TMP="$CFG.new.$$"
-CR=$(printf '\r')
 found=0
 if [ -f "$CFG" ]; then
     : > "$TMP" || { say "ERROR: cannot write near $CFG. Nothing changed."; exit 1; }
     while IFS= read -r line || [ -n "$line" ]; do
-        l=${line%"$CR"}
-        case "$l" in
-            DRY_RUN=*) printf '%s\n' "DRY_RUN=$want" >> "$TMP"; found=1 ;;
-            *)         printf '%s\n' "$l"            >> "$TMP" ;;
+        case "$line" in
+            DRY_RUN=*) putline "DRY_RUN=$want" >> "$TMP"; found=1 ;;
+            *)         putline "$line"         >> "$TMP" ;;
         esac
     done < "$CFG"
-    [ "$found" = 1 ] || printf '%s\n' "DRY_RUN=$want" >> "$TMP"
+    [ "$found" = 1 ] || putline "DRY_RUN=$want" >> "$TMP"
 else
-    printf '%s\n' "DRY_RUN=$want" > "$TMP" || { say "ERROR: cannot create $CFG. Nothing changed."; exit 1; }
+    putline "DRY_RUN=$want" > "$TMP" || { say "ERROR: cannot create $CFG. Nothing changed."; exit 1; }
+fi
+
+# never install an empty/garbled config over a good one
+if [ ! -s "$TMP" ]; then
+    rm -f "$TMP"; say "ERROR: rewrite produced an empty file — nothing changed."; exit 1
 fi
 
 if mv "$TMP" "$CFG"; then
@@ -43,9 +50,18 @@ else
     rm -f "$TMP"; say "ERROR: could not update $CFG. Nothing changed."; exit 1
 fi
 
-# Best-effort restart so it takes effect now (ignored if the package isn't installed).
+# Restart so it takes effect now. If the package isn't installed (standalone),
+# the stop/start are no-ops and the new mode loads on the next start anyway.
 nemesis service stop  gen5.autolock/autolock >/dev/null 2>&1
-nemesis service start gen5.autolock/autolock >/dev/null 2>&1
-
-say "Done. You can remove the USB stick."
-exit 0
+if nemesis service start gen5.autolock/autolock >/dev/null 2>&1; then
+    say "Done — new mode is active now. You can remove the USB stick."
+    exit 0
+elif [ -d /data/nemesis/apps/gen5.autolock ]; then
+    say "ERROR: the package is installed but the service did not restart — the OLD mode"
+    say "       is still active for this drive. Try again or reboot. Nothing else changed."
+    exit 1
+else
+    say "NOTE: not installed as a package (standalone) — the new mode loads on the next"
+    say "      start. You can remove the USB stick."
+    exit 0
+fi

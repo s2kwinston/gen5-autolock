@@ -28,11 +28,19 @@ fi
 chmod 600 "$DST" 2>/dev/null
 say "New settings applied to $DST."
 
-# Best-effort restart so the new settings take effect immediately. Ignored if the
-# package isn't installed (e.g. standalone use) — settings still load on next start.
+# Restart so the new settings take effect now. If the package isn't installed
+# (standalone), the stop/start are no-ops and settings load on the next start.
 nemesis service stop  gen5.autolock/autolock >/dev/null 2>&1
-nemesis service start gen5.autolock/autolock >/dev/null 2>&1
-
-say "Done. New settings are live now (and on every drive from here on)."
-say "You can remove the USB stick."
-exit 0
+if nemesis service start gen5.autolock/autolock >/dev/null 2>&1; then
+    say "Done. New settings are live now (and on every drive from here on)."
+    say "You can remove the USB stick."
+    exit 0
+elif [ -d /data/nemesis/apps/gen5.autolock ]; then
+    say "ERROR: the package is installed but the service did not restart — it is still"
+    say "       using the OLD settings for this drive. Try again or reboot."
+    exit 1
+else
+    say "NOTE: not installed as a package (standalone) — new settings load on the next"
+    say "      start. You can remove the USB stick."
+    exit 0
+fi

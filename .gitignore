@@ -18,3 +18,10 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# Claude / AI tooling — never commit (defensive; none are tracked today)
+.claude/
+CLAUDE.md
+progress.md
+.claudeignore
+*.claude

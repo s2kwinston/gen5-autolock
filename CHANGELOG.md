@@ -19,7 +19,7 @@ not battle-hardened.
   without editing the daemon; survives updates. It is **parsed** for known `KEY=value`
   keys, never executed (a writable config can't run code as root). Values are
   range-clamped, so a bad entry falls back to the default. See `gen5-autolock.conf.example`.
-- **Runtime on/off toggle** — `touch /data/local/tmp/gen5-autolock.off` to pause (stands
+- **Runtime on/off toggle** — `touch /data/nemesis/gen5-autolock.off` to pause (stands
   down, never locks) and delete it to resume; no restart needed. `ENABLED=0` does the
   same permanently.
 - **Trunk/liftgate-aware arming** — won't lock while the liftgate reads open, and *holds*
@@ -52,6 +52,22 @@ not battle-hardened.
   code in the root daemon. Install hooks `umask 077` and `chmod 600` the seeded config.
 - Startup logs the effective config / pause-flag / log paths, so a stale or wrong pause
   path can't silently fail-open (you think it's paused while it keeps locking).
+
+### Fixed (pre-release hardening)
+- **USB mode sticks no longer depend on `printf`** (absent on this KitKat head unit): they
+  rewrite the config with `echo` and refuse to install an empty result, so a GO LIVE /
+  TEST MODE stick can't silently blank the config and still report success.
+- **Config parsing tolerates inline `# comments` and trailing whitespace/CR** — e.g.
+  `DRY_RUN=0   # go live` now takes effect instead of silently falling back to the default.
+- **A cold-boot ACC read can't kill the daemon** — a low `mACCStatus` counts as power-down
+  only after a live value has been seen, so a boot-time cache read of 0/1 no longer makes a
+  `mode=background` service exit for the whole drive.
+- **The framework reference odex survives package updates** — the hash-gate reference now
+  lives at `/data/nemesis/gen5-autolock-ref/`, outside the package tree.
+- **A package update no longer un-pauses the daemon** — `postuninstall` detects the update
+  staging dir and leaves the pause flag alone.
+- Corrected wording: re-entry is **not** occupant protection; the hood/frunk is absent from
+  `dumpsys` but **is** observable via a TX-free listener (a possible future hood-hold).
 
 ### Known limitations
 - **No key-inside protection.** The lock path has no interlock and the head unit

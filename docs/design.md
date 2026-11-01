@@ -21,9 +21,10 @@ in the [README](../README.md).
    possible: the head unit receives **no fob-presence signal at all**, confirmed at the
    CAN-protocol layer (§8). Deploying is a **risk-acceptance decision**, not a safety
    guarantee. In normal use — you walk away *with* the key — the feature is unaffected.
-2. **Persistence is a separate decision.** Running every drive means something starts
-   the daemon at each boot, which is a `/system`/init change — see
-   [`install/persistence.md`](../install/persistence.md).
+2. **Persistence is handled by the package.** Running every drive means something must
+   start the daemon at each boot; the NEMESIS package registers it as a service that
+   NEMESIS starts at boot — **no `/system`/init change of your own** (see §7 and
+   [`install/persistence.md`](../install/persistence.md)).
 
 ---
 
@@ -53,7 +54,7 @@ All grounded in on-car measurement and the decompiled stock framework.
 | F5 | `lockDoor(true)` = `service call com.hkmc.micom.bcm 5 i32 1`. In `IBCMService$Stub` the `onTransact` case `0x5` does `enforceInterface` → `readInt()` → non-zero ⇒ `lockDoor(true)`. No permission/ACL check, no software safety check. |
 | F6 | The MMCAN lock is a clean momentary pulse that self-releases: `C_PreCrankReq=1` now → (+1000 ms) relay `C_CtrlDrLockRlyIBOX=1` → (+500 ms) relay=0. Identical to the OEM / remote-services lock. No stuck relay. |
 | F7 | `dumpsys com.hkmc.micom.bcm` prints the live cache with labels and sends **no** CAN. Door/lock/ignition/acc are all readable from it. |
-| F8 | `mHoodStatus` and `mGearPpositionClutch` exist as fields but are **not printed** by the dump, and cannot be read without a CAN transmit. Hood/gear are therefore unobservable via safe reads. |
+| F8 | `mHoodStatus` and `mGearPpositionClutch` exist as fields but are **not printed** by `dumpsys` (`BcmStatus.toString()` omits them), so they are invisible to a `dumpsys`/shell reader like this daemon. The hood is *not* fundamentally unobservable, though: it arrives passively over CAN (`RES_HOODSW_STATE`) and is pushed to every registered `IBCMListener` as the 10th arg of `onDoorAllStateChanged` — a small, TX-free `app_process` listener client could read it (basis for a possible future hood-guard). The only *hood-named Binder getter*, `getHoodStatusInfo()`, is void and does trigger a CAN TX, which is why a `service call` read is avoided — but that is a safe-reads policy choice, not a hard limit. |
 
 **State encodings (confirmed across all runs):**
 
@@ -119,8 +120,11 @@ All grounded in on-car measurement and the decompiled stock framework.
   passenger-only movement.
 - **ARMED** — debounce counting. `lock→0` → DONE (you or the car locked it; never
   double-send). `acc<3` → DEAD. A reopen is handled by *what* reopened:
-  - a **door** reopens (someone may have climbed back in) → WAIT_EXIT, a fresh **driver**
-    exit is required before it can arm again;
+  - a **door** reopens → WAIT_EXIT, a fresh **driver**-door open→close is required before
+    it can arm again. NOTE: this is *not* occupant protection — the daemon cannot tell a
+    real exit from someone climbing back IN, so a re-entry through the driver door reads as
+    a fresh exit and it will arm (and lock) with them inside after the debounce. Pause it
+    before sitting in a switched-off car (the interior handle always opens a locked door);
   - the **trunk/liftgate** reopens while the doors stay closed (cargo access, not
     re-entry) → **hold**: it won't lock while the liftgate is open and the debounce
     pauses, but the exit still counts, so it resumes the moment the liftgate closes — no
@@ -159,9 +163,12 @@ Read a **fresh** `dumpsys com.hkmc.micom.bcm` immediately before firing. ALL mus
 | *debounce* | ≥ `LOCK_DELAY` s continuously true, no reopen | Walk-away, not "sat down and switched off" |
 | *fires* | `< MAX_FIRES` | One-shot per cycle, plus bounded retries |
 
-**Deliberately not gated (unobservable — F8):** the **hood** (`mHoodStatus` not in the
-dump; locking with the hood ajar is harmless) and **gear in P** (`mGearPpositionClutch`
-not in the dump; ignition-off forces P on an EV, and we only fire at `acc==3`).
+**Deliberately not gated (not in the `dumpsys` output — F8):** the **hood/frunk**
+(`mHoodStatus` isn't in the dump, so this `dumpsys`-based daemon can't see it; locking the
+doors with the hood ajar is harmless — the hood isn't latched or trapped. It *could* be
+watched via a TX-free listener client (F8), so a hood-hold is a feasible future addition)
+and **gear in P** (`mGearPpositionClutch` not in the dump; ignition-off forces P on an EV,
+and we only fire at `acc==3`).
 
 ---
 
@@ -251,8 +258,13 @@ script — no `app_process`/Java is required.
   `mTrunkOpenedState: 0` — so there is no on-car confirmation this field actually tracks
   the liftgate. If it doesn't, the guard is blind. Verify it (open the liftgate, check
   the field flips to 1, or watch the log for `trunk/liftgate open — holding`) before
-  relying on it. The **frunk** (front trunk) maps to `mHoodStatus`, which is unreadable
-  (F8) — a frunk left open is invisible, but that is harmless for door locking.
+  relying on it. The **frunk** (front trunk) maps to `mHoodStatus`, which this daemon does
+  not read (it isn't in `dumpsys` — F8), so a frunk left open is invisible to it and the
+  car still locks. That is harmless for the lock itself (the hood isn't latched or
+  trapped); the one real hazard is a **fob left in the frunk**, which becomes a lockout
+  when the hood shuts (the frunk has no outside/app release) — keep the fob on you. The
+  hood *could* be watched via a TX-free listener (F8); a hood-hold is a possible future
+  addition.
 
 ---
 

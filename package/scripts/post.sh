@@ -4,7 +4,9 @@
 export PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
 umask 077                      # anything we create is owner-only
 ND=/data/nemesis
-mkdir -p "$ND" 2>/dev/null
+# gen5-autolock-ref/ lives OUTSIDE the package tree so user-supplied odex for the
+# hash gate survives a package update (the tree under apps/<id> is wiped on update).
+mkdir -p "$ND" "$ND/gen5-autolock-ref" 2>/dev/null
 
 # Seed a persistent, update-surviving config the user can edit. Never clobber
 # an existing one (keep their settings across updates). Lock it down: the daemon
@@ -22,7 +24,8 @@ echo "    in $ND/gen5-autolock.conf to arm it."
 echo "  * KEEP A SPARE KEY OUTSIDE THE CAR. There is no key-inside protection;"
 echo "    it can lock a key inside. Never rely on it with a person/pet inside."
 echo "  * Framework hash gate: put automotive.odex + automotive-service.odex in"
-echo "    $(pwd)/ref/ , or set CHECK_ODEX=0 in the config. See ref/README.md."
+echo "    $ND/gen5-autolock-ref/ (survives updates), or set CHECK_ODEX=0 in the"
+echo "    config. See ref/README.md."
 echo "  * Toggle from NEMESIS Manager (triple-press Nav): Services -> autolock ->"
 echo "    Start/Stop, or Packages -> Gen5 Auto-Lock -> Launch (pause/resume)."
 exit 0

@@ -61,8 +61,11 @@ Open the Manager (triple-press the **Nav** button). Two ways to control it:
 
 Edit `/data/nemesis/gen5-autolock.conf`: watch `/data/nemesis/gen5-autolock.log` across
 a few real drives to confirm it only *would* fire on a genuine park-and-exit, then set
-`DRY_RUN=0`. The hash gate expects your odex in
-`/data/nemesis/apps/gen5.autolock/ref/` (or set `CHECK_ODEX=0`) — see `ref/README.md`.
+`DRY_RUN=0`. The hash gate expects your odex in `/data/nemesis/gen5-autolock-ref/`
+(created on install; it lives outside the package tree so an update won't wipe it) — or
+set `CHECK_ODEX=0`. See `ref/README.md`. **Until you do one of those the daemon refuses to
+run**: it logs `FATAL: reference odex missing … — refusing to run` and exits (fail-safe),
+so check the log on first install.
 
 ## Uninstall
 

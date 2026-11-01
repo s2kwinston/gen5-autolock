@@ -133,8 +133,10 @@ and the file contents in [`package/README.md`](package/README.md)). It installs 
 framework no longer matches what the lock transaction was verified against (an OTA can
 move transaction codes and turn a "lock" into something else). Put your head unit's own
 `automotive.odex` + `automotive-service.odex` in
-`/data/nemesis/apps/gen5.autolock/ref/` (they're proprietary and **not** shipped here),
-or set `CHECK_ODEX=0` in the config. See [`ref/README.md`](ref/README.md).
+`/data/nemesis/gen5-autolock-ref/` (they're proprietary and **not** shipped here),
+or set `CHECK_ODEX=0` in the config. **Until you do one of those the daemon refuses to
+run** — it logs a `FATAL: reference odex missing` line and exits (fail-safe), so check the
+log on first install. See [`ref/README.md`](ref/README.md).
 
 ### Standalone (advanced)
 
@@ -162,7 +164,7 @@ typo can't make it misbehave — and the file is **parsed, never executed**. The
 
 | Knob | Default | Purpose |
 |---|---|---|
-| `LOCK_DELAY` | `30` | Seconds after the last door closes before locking (5–600; but keep ≤ ~120 — the screen only stays awake ~2–3 min after switch-off, so a longer wait can miss the lock). |
+| `LOCK_DELAY` | `30` | Seconds after the last door closes before locking. Range 5–600, but **keep ≤ ~90**: the real wait is ~1.3–1.8× this (each poll also does a `dumpsys`), and the screen only stays awake ~2–3 min after switch-off, so a bigger value can miss the lock entirely. |
 | `DRY_RUN` | `1` | `1` = log `WOULD FIRE`, send no lock (safe). Set `0` to actually arm. |
 | `ENABLED` | `1` | `0` = installed but inactive — stands down, never locks. |
 | `DRIVER_DOOR_ONLY` | `1` | `1` = arm only on a driver-door exit; `0` = any door. |
@@ -188,7 +190,8 @@ touch /data/nemesis/gen5-autolock.off   # pause — stands down, won't lock
 rm    /data/nemesis/gen5-autolock.off    # resume (re-arms on the next drive)
 ```
 
-Handy when you're about to sit in the car with the key, or lending it to someone. The
+**Pause it before** you sit in the switched-off car with the key, hand it to a valet, or
+drop it at service or a car wash — otherwise the fob gets left inside and it locks in. The
 flag survives reboots. (`ENABLED=0` in the config disables it permanently.)
 
 ## Test (dry-run first)
@@ -198,10 +201,12 @@ With `DRY_RUN=1` (default), the daemon runs and logs but never locks. It writes 
 
 - it logs `WOULD FIRE` **only** after a genuine park → off → exit → doors closed;
 - it **never** logs `WOULD FIRE` at boot, while you are getting in, or with a door open;
-- **verify the liftgate:** open it and check the log says `trunk/liftgate open — holding`
-  (and that it resumes when you close it). This confirms the car actually reports the
-  liftgate to the head unit — it was never exercised during the original testing (see
-  [Limitations](#limitations)).
+- **verify the liftgate reports open:** the daemon logs the raw door/trunk values on its
+  `exit seen …` and `ARMED …` lines (e.g. `trunk=1`). Open the liftgate and confirm a
+  `trunk=1` appears — either on those lines (liftgate already open as you get out) or as a
+  `trunk/liftgate open — holding` line (liftgate opened *after* it armed; it should then
+  resume when you close it). If `trunk` never leaves `0`, the field doesn't track the
+  liftgate on your car (see [Limitations](#limitations)).
 
 Only once that log looks right should you set `DRY_RUN=0`.
 
@@ -216,6 +221,16 @@ Only once that log looks right should you set `DRY_RUN=0`.
   liftgate reads open, and it holds (without needing a fresh exit) while you load cargo —
   but `mTrunkOpenedState` was never seen change during the original testing, so confirm
   it actually reports open on your car (see the liftgate check above) before trusting it.
+- **The hood/frunk is not watched.** `mHoodStatus` isn't in `dumpsys`, so the car locks
+  with the frunk open. Harmless to the lock itself (the hood isn't latched or trapped) —
+  but a **fob left in the frunk** becomes a lockout when it shuts. Keep the fob on you.
+- **Getting back in can lock you in.** Climbing back through the driver door after you'd
+  gotten out reads as a fresh exit — it re-arms and locks with you inside after the delay.
+  Pause it first (see [Turn it on/off](#turn-it-onoff)). The interior handle still opens a
+  locked door from within.
+- **Charging:** if you reach the charge port just as it locks, the port won't pop — you
+  unlock, plug in, and it stays unlocked for the session (one lock per stop). Plug in
+  first, or press LOCK after plugging in.
 
 Full reasoning, the measured facts, and the detection analysis are in
 [`docs/design.md`](docs/design.md) §8.

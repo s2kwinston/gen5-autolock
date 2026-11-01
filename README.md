@@ -155,9 +155,12 @@ a USB stick from **[`usb-sticks/`](usb-sticks/)** — insert, tap Yes, done:
 | `usb-sticks/test-mode/` | Switch to TEST MODE (runs, logs, never locks). Keeps your other settings. |
 | `usb-sticks/custom-settings/` | Edit the plain-text file (e.g. `LOCK_DELAY=45`) and insert — sets any knob. |
 
-Each is a tiny settings update, not a reinstall, and it persists. Pre-zipped copies for
-a Release are produced by `build-sticks.sh`. (Running standalone? The daemon also reads a
-`gen5-autolock.conf` next to `walkaway.sh`.)
+Each is a tiny settings update, not a reinstall, and it persists. A fourth stick,
+**`usb-sticks/get-log/`**, changes nothing — it copies the log and a body-control snapshot
+onto the USB for reading on a computer (and for the liftgate check — see
+[Test](#test-dry-run-first)). Pre-zipped copies for a Release are produced by
+`build-sticks.sh`. (Running standalone? The daemon also reads a `gen5-autolock.conf` next
+to `walkaway.sh`.)
 
 Out-of-range or non-numeric values are ignored and the built-in default is used, so a
 typo can't make it misbehave — and the file is **parsed, never executed**. The knobs:
@@ -197,7 +200,9 @@ flag survives reboots. (`ENABLED=0` in the config disables it permanently.)
 ## Test (dry-run first)
 
 With `DRY_RUN=1` (default), the daemon runs and logs but never locks. It writes to
-`/data/nemesis/gen5-autolock.log`. Over a few real stops, confirm:
+`/data/nemesis/gen5-autolock.log` (no shell? insert the **get-log** stick,
+[`usb-sticks/get-log/`](usb-sticks/get-log/), to copy that log and a body-control
+snapshot onto the USB). Over a few real stops, confirm:
 
 - it logs `WOULD FIRE` **only** after a genuine park → off → exit → doors closed;
 - it **never** logs `WOULD FIRE` at boot, while you are getting in, or with a door open;

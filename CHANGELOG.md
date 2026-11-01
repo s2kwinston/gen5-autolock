@@ -37,6 +37,8 @@ not battle-hardened.
   - `go-live/` and `test-mode/` — one-tap flip between LIVE and TEST MODE (`DRY_RUN`),
     editing only that line and keeping your other settings.
   - `custom-settings/` — edit a plain-text file to set any knob (e.g. `LOCK_DELAY`).
+  - `get-log/` — read-only: copies the log, config and a body-control snapshot onto the
+    USB (for non-shell users and the liftgate check); changes nothing on the car.
   Each ships a non-technical `README.txt`.
 - `install/persistence.md` — boot-start via the NEMESIS package (plus manual fallbacks).
 - `ref/` — where you place your own head unit's framework for the hash gate (proprietary

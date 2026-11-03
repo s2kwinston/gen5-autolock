@@ -1,14 +1,28 @@
 [nemesis]
-version=0.1.0
+; Descriptor format 1.1 (NEMESIS 1.16 Package Store). `type` is the 1.1 key; `types`
+; is what a 1.15 unit reads — both are listed so the service registers on either.
+version=1.1
 id=gen5.autolock
 name=Gen5 Auto-Lock (walk-away)
+type=application,service
 types=application,service
+package-version=0.1.0
+short-desc="Walk-away auto-lock: locks the car once after you get out"
+detailed-desc="Locks the doors once, LOCK_DELAY seconds after you switch off, get out and shut the door. Ships in TEST MODE (logs only) until you set DRY_RUN=0. NO key-inside protection: keep a spare key outside the car. Verified on a 2022 US EV6, firmware 260507."
+; Store compatibility: `os` is matched against ro.build.product (verified build:
+; CVEV.USA.0000.V015.012.260507 = US EV6, firmware 260507); `models` against the
+; head unit's onebin target (cvev_us). Same car on newer firmware -> "partial"
+; (yellow, installable; the odex gate still protects at runtime). Other models ->
+; "incompatible" (install asks for --accept-risk) — the lock code was not verified there.
+os="CVEV.USA.*.260507"
+models="cvev_us"
 preinstall=scripts/pre.sh
 postinstall=scripts/post.sh
 preuninstall=scripts/preun.sh
 postuninstall=scripts/postun.sh
 
-; Packages -> "Launch" runs this: flips the pause flag (pause <-> resume).
+; Packages -> "Launch" runs this: flips the pause flag (pause <-> resume). NEMESIS 1.16
+; shows what it prints as a toast, so the PAUSED / RESUMED line is visible on screen.
 [app.0]
 kind=sh
 path=bin/toggle.sh

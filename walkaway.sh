@@ -20,7 +20,7 @@
 #      no lock. Watch the log across real drives first, then set DRY_RUN=0.
 #    - PERSISTENCE: the NEMESIS package registers this as a service NEMESIS
 #      starts at every boot (no /system init change). Standalone? Arrange your
-#      own boot launch — see docs/design.md §7 and install/persistence.md.
+#      own boot launch — see docs/design.md §7.
 #
 #  CONFIGURE without editing this file: put a `gen5-autolock.conf` at
 #  /data/nemesis/ (or beside the script) to override any knob below — see
@@ -38,12 +38,13 @@
 #    * Lock only. The ONLY write is `service call com.hkmc.micom.bcm 5 i32 1`
 #      (lockDoor true). There is NO unlock path and NO `i32 0` anywhere.
 #    * Fires only after a FRESH pre-check passes (IGN off, acc==3, unlocked,
-#      every door + trunk closed, driver-exit observed, debounce elapsed).
+#      every door, the liftgate and the hood closed, driver-exit observed,
+#      debounce elapsed).
 #    * Arms only after a real drive (sees IGN on first) — a boot-on-approach
 #      with the engine off can never be mistaken for a park-and-exit.
 #    * One lock per drive cycle, with a small bounded retry; never hammers.
-#    * Refuses to run if the framework odex no longer matches the analyzed
-#      copy (OTA could change transaction codes).
+#    * Refuses to run unless the framework odex matches a verified build (md5)
+#      or a reference the user pinned (an OTA could change transaction codes).
 ###############################################################################
 export PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
 export LD_LIBRARY_PATH=/vendor/lib:/system/lib
@@ -60,6 +61,7 @@ MIN_ACC=3              # only fire while mACCStatus == this (off-standby)
 DRY_RUN=1              # 1 = log "WOULD FIRE" and send NO lock (safe default)
 ENABLED=1              # 0 = installed but inactive (stands down, never arms)
 CHECK_ODEX=1           # 1 = refuse to run if the framework hash changed
+HOOD_GUARD=1           # 1 = also hold while the hood/frunk is open (read from logcat)
 
 # ---- paths ----
 # Default under /data/nemesis, which SURVIVES reboot. NOT /data/local/tmp — NEMESIS
@@ -73,8 +75,15 @@ if [ -n "$GEN5_REF" ]; then REF=$GEN5_REF
 elif [ -n "$WALKAWAY_REF" ]; then REF=$WALKAWAY_REF
 elif [ -f "$NEMESIS_DIR/gen5-autolock-ref/automotive.odex" ]; then REF=$NEMESIS_DIR/gen5-autolock-ref
 else REF=$SELF/ref; fi            # analyzed odex for the hash gate
-AUTOMOTIVE_ODEX=/system/framework/automotive.odex
-AUTOMOTIVE_SVC_ODEX=/system/framework/automotive-service.odex
+FW=${GEN5_FRAMEWORK:-/system/framework}
+AUTOMOTIVE_ODEX=$FW/automotive.odex
+AUTOMOTIVE_SVC_ODEX=$FW/automotive-service.odex
+# md5 of the framework files on the build(s) the lock transaction was verified
+# against (space-separated lists; add a build = add a hash to each). md5 is an
+# OTA tripwire here, not a security boundary.
+#   CVEV.USA.0000.V015.012.260507  (2022 US Kia EV6 GT-Line, Gen5W)
+KNOWN_MD5_AUTOMOTIVE="efbfceed274a0b58d092e89aeaa8c66e"
+KNOWN_MD5_AUTOMOTIVE_SVC="33a30843e149a3d604ecc6957fd25d46"
 # config: prefer a persistent file that survives package updates; else one beside the script
 if [ -n "$GEN5_CONF" ]; then CONF=$GEN5_CONF
 elif [ -f "$NEMESIS_DIR/gen5-autolock.conf" ]; then CONF=$NEMESIS_DIR/gen5-autolock.conf
@@ -114,6 +123,7 @@ load_config() {
             DRY_RUN)           DRY_RUN=$val ;;
             ENABLED)           ENABLED=$val ;;
             CHECK_ODEX)        CHECK_ODEX=$val ;;
+            HOOD_GUARD)        HOOD_GUARD=$val ;;
             *) say "config: ignoring unknown key '$key'" ;;
         esac
     done < "$CONF"
@@ -141,9 +151,11 @@ MIN_ACC=$(clampnum "$MIN_ACC" 0 5 3)
 { [ "$ENABLED" = 0 ] && ENABLED=0; } || ENABLED=1
 { [ "$DRIVER_DOOR_ONLY" = 0 ] && DRIVER_DOOR_ONLY=0; } || DRIVER_DOOR_ONLY=1
 { [ "$CHECK_ODEX" = 0 ] && CHECK_ODEX=0; } || CHECK_ODEX=1
+{ [ "$HOOD_GUARD" = 0 ] && HOOD_GUARD=0; } || HOOD_GUARD=1
 
 # ---- parsed BCM cache globals ----
 IGN1="" IGN2="" ACC="" LOCK="" DRV="" PAS="" RL="" RR="" TRUNK="" STOLE="" PANIC=""
+HOOD=""   # hood/frunk switch from logcat: 1 open, 0 closed, "" unknown (counts as closed)
 
 read_bcm() {
     DUMP=$(dumpsys com.hkmc.micom.bcm 2>&1)
@@ -173,12 +185,41 @@ read_bcm() {
 doors_closed() {
     [ "$DRV" = 0 ] && [ "$PAS" = 0 ] && [ "$RL" = 0 ] && [ "$RR" = 0 ]
 }
-# Doors AND trunk/liftgate closed.
-# NOTE: mTrunkOpenedState is treated as the rear liftgate. Firmware names its
-# source RES_TRUNK_TG_SW (tailgate switch), but it was never seen change on-car
-# during testing — VERIFY it reads 1 when your liftgate is open (watch the log
-# for "trunk/liftgate open — holding") before trusting this.
-all_closed() { doors_closed && [ "$TRUNK" = 0 ]; }
+# Hood/frunk: NOT in dumpsys, but every stock BCM client logs the hood switch on
+# each door event ("D/BCMCanManager: mDoorStatus.mHoodSwitchState<n>"), so the
+# log is a TX-free read of it (verified on-car 2026-11-01: 1 with the frunk open,
+# and the hood's own open/close each raise an event). Last line wins; HOOD keeps
+# its value between reads. Only called while IGN is off (the ring-buffer read is
+# cheap but not free). "" = no door event in the log yet = treated as closed;
+# every exit logs one, so it is known by the time we can arm.
+read_hood() {
+    [ "$HOOD_GUARD" = 1 ] || { HOOD=""; return 0; }
+    HL=$(logcat -d -s BCMCanManager:D 2>/dev/null)
+    OLD_IFS="$IFS"
+    IFS='
+'
+    for L in $HL; do
+        case "$L" in
+            *mHoodSwitchState*) H=${L##*mHoodSwitchState}; H=${H%%[!0-9]*}; [ -n "$H" ] && HOOD=$H ;;
+        esac
+    done
+    IFS="$OLD_IFS"
+}
+
+# Monotonic seconds since boot from /proc/uptime (verified on this HU). Immune to the
+# wall clock being set after boot (the HU starts at a 2015 default and syncs later).
+# "" if unreadable — then the debounce counts polls instead.
+UPTIME_FILE=${GEN5_UPTIME:-/proc/uptime}
+now_s() {
+    set -- $(cat "$UPTIME_FILE" 2>/dev/null); n=${1%%.*}
+    case "$n" in ''|*[!0-9]*) echo "" ;; *) echo "$n" ;; esac
+}
+
+# Lids closed: liftgate from the cache (mTrunkOpenedState — verified on-car
+# 2026-11-01: reads 1 with the rear liftgate open) and the hood from logcat.
+lids_closed() { [ "$TRUNK" = 0 ] && [ "$HOOD" != 1 ]; }
+# Doors AND lids closed.
+all_closed() { doors_closed && lids_closed; }
 
 # full fire-time pre-check against the CURRENT parsed cache
 precheck_ok() {
@@ -192,18 +233,44 @@ fire_lock() {
     service call com.hkmc.micom.bcm 5 i32 1 >> "$LOG" 2>&1
 }
 
+# ---- framework hash gate ----------------------------------------------------
+# The lock transaction (bcm 5) was verified against specific framework builds. An
+# OTA could renumber it, so refuse to run unless the live framework is known-good:
+#   1. its md5 matches a verified build (toolbox `md5`; zero user steps), or
+#   2. it is byte-identical to a reference the user PINNED in $REF (ref-odex stick)
+#      — the conscious "I accept this firmware" path for other builds / after an OTA.
+md5_of() { # file -> 32-hex md5, or "" (toolbox `md5` prints "<hash>  <file>")
+    set -- $(md5 "$1" 2>/dev/null)
+    case "$1" in
+        ????????????????????????????????) case "$1" in *[!0-9a-f]*) echo "" ;; *) echo "$1" ;; esac ;;
+        *) echo "" ;;
+    esac
+}
+in_list() { # value list -> 0 if value is one of the space-separated list items
+    [ -n "$1" ] && case " $2 " in *" $1 "*) return 0 ;; esac; return 1
+}
+known_build() {
+    in_list "$(md5_of "$AUTOMOTIVE_ODEX")" "$KNOWN_MD5_AUTOMOTIVE" &&
+    in_list "$(md5_of "$AUTOMOTIVE_SVC_ODEX")" "$KNOWN_MD5_AUTOMOTIVE_SVC"
+}
 odex_gate() {
     [ "$CHECK_ODEX" = 1 ] || { say "odex gate DISABLED (CHECK_ODEX=0)"; return 0; }
+    if known_build; then
+        say "ok: odex gate passed (framework matches a verified build)"
+        return 0
+    fi
     if [ ! -f "$REF/automotive.odex" ] || [ ! -f "$REF/automotive-service.odex" ]; then
-        say "FATAL: reference odex missing from $REF — refusing to run."
-        say "       Copy your head unit's automotive*.odex into $REF (see ref/README.md)."
+        say "FATAL: framework is not a verified build and no pinned reference in $REF — refusing to run."
+        say "       sw=$(getprop ro.build.product) md5=$(md5_of "$AUTOMOTIVE_ODEX")/$(md5_of "$AUTOMOTIVE_SVC_ODEX")"
+        say "       To accept THIS firmware anyway: insert the ref-odex USB stick (or copy"
+        say "       $FW/automotive*.odex into $REF). See ref/README.md."
         return 1
     fi
     cmp "$AUTOMOTIVE_ODEX" "$REF/automotive.odex" >/dev/null 2>&1 || {
-        say "FATAL: automotive.odex changed vs analyzed copy — refusing to run."; return 1; }
+        say "FATAL: automotive.odex changed vs the pinned reference — refusing to run."; return 1; }
     cmp "$AUTOMOTIVE_SVC_ODEX" "$REF/automotive-service.odex" >/dev/null 2>&1 || {
-        say "FATAL: automotive-service.odex changed vs analyzed copy — refusing to run."; return 1; }
-    say "ok: odex hash gate passed"
+        say "FATAL: automotive-service.odex changed vs the pinned reference — refusing to run."; return 1; }
+    say "ok: odex gate passed (framework matches your pinned reference in $REF)"
     return 0
 }
 
@@ -212,7 +279,7 @@ odex_gate() {
 ###############################################################################
 say "==== gen5-autolock starting (pid $$)"
 say "device=$(getprop ro.product.device) sw=$(getprop ro.build.product)"
-say "config: lock_delay=${LOCK_DELAY}s dry_run=$DRY_RUN enabled=$ENABLED driver_door_only=$DRIVER_DOOR_ONLY max_fires=$MAX_FIRES"
+say "config: lock_delay=${LOCK_DELAY}s dry_run=$DRY_RUN enabled=$ENABLED driver_door_only=$DRIVER_DOOR_ONLY max_fires=$MAX_FIRES hood_guard=$HOOD_GUARD"
 say "paths: conf=$CONF off_file=$OFF_FILE log=$LOG"
 
 odex_gate || exit 1
@@ -235,8 +302,11 @@ EXIT_SEEN=0
 PREV_DRV=0
 PREV_ANY=0
 FIRES=0
-DEB=0            # debounce seconds accumulated
-TRUNK_HOLD=0     # paused because the trunk/liftgate is open
+DEB=0            # debounce: polls counted (fallback when the clock is unusable)
+ARM_T=""         # debounce: wall-clock second we armed / resumed at
+LID_HOLD=0       # paused because the liftgate or the hood is open
+EXIT_MSG=""      # pending "exit seen" line (logged once the hood has been read)
+WAIT_MSG=0       # "lid open at exit — waiting" logged once per exit
 PAUSED=0         # paused by the ENABLED knob / off-file toggle
 ALIVE=0          # have we seen a live ACC yet? (a cold-boot cache can read 0/1)
 
@@ -272,7 +342,7 @@ while :; do
             PAUSED=1
             say "DISABLED (enabled=$ENABLED off-file=$([ -f "$OFF_FILE" ] && echo yes || echo no)) — standing down; will NOT lock"
         fi
-        STATE=BOOT; EXIT_SEEN=0; FIRES=0; DEB=0; TRUNK_HOLD=0
+        STATE=BOOT; EXIT_SEEN=0; FIRES=0; DEB=0; LID_HOLD=0
         sleep "$POLL_ACTIVE"
         continue
     elif [ "$PAUSED" = 1 ]; then
@@ -285,7 +355,7 @@ while :; do
         if [ "$STATE" != DRIVING ]; then
             say "IGN on — reset to DRIVING (was $STATE)"
         fi
-        STATE=DRIVING; EXIT_SEEN=0; FIRES=0; DEB=0; TRUNK_HOLD=0
+        STATE=DRIVING; EXIT_SEEN=0; FIRES=0; DEB=0; LID_HOLD=0
         PREV_DRV=$DRV; PREV_ANY=0
         sleep "$POLL_DRIVE"
         continue
@@ -309,23 +379,34 @@ while :; do
         ;;
 
     WAIT_EXIT)
-        # detect the exit: driver door (or any door) goes open->closed
+        # Detect the exit: driver door (or any door) goes open->closed. NO hood read
+        # on these polls — the log dump costs seconds on this HU (measured 2026-11-02:
+        # polls with it ran 2–5 s apart) and a brief door open->close must not fall
+        # between polls. The hood only matters once the exit has been seen.
         if [ "$DRIVER_DOOR_ONLY" = 1 ]; then
-            if [ "$PREV_DRV" = 1 ] && [ "$DRV" = 0 ]; then EXIT_SEEN=1; say "exit seen (driver door closed)  [drv=$DRV pas=$PAS rl=$RL rr=$RR trunk=$TRUNK]"; fi
+            if [ "$PREV_DRV" = 1 ] && [ "$DRV" = 0 ]; then EXIT_SEEN=1; EXIT_MSG="driver door closed"; WAIT_MSG=0; fi
             PREV_DRV=$DRV
         else
             ANY=0; { [ "$DRV" = 1 ] || [ "$PAS" = 1 ] || [ "$RL" = 1 ] || [ "$RR" = 1 ]; } && ANY=1
-            if [ "$PREV_ANY" = 1 ] && [ "$ANY" = 0 ]; then EXIT_SEEN=1; say "exit seen (a door closed)  [drv=$DRV pas=$PAS rl=$RL rr=$RR trunk=$TRUNK]"; fi
+            if [ "$PREV_ANY" = 1 ] && [ "$ANY" = 0 ]; then EXIT_SEEN=1; EXIT_MSG="a door closed"; WAIT_MSG=0; fi
             PREV_ANY=$ANY
         fi
 
-        if [ "$EXIT_SEEN" = 1 ] && [ "$ACC" = "$MIN_ACC" ] && [ "$LOCK" = 1 ] && all_closed; then
-            STATE=ARMED; DEB=0; TRUNK_HOLD=0
-            say "ARMED — debounce ${LOCK_DELAY}s (acc=$ACC lock=$LOCK trunk=$TRUNK doors=$DRV$PAS$RL$RR)"
+        if [ "$EXIT_SEEN" = 1 ]; then
+            read_hood       # exit seen: now the lids matter (a slow poll is fine here)
+            [ -n "$EXIT_MSG" ] && { say "exit seen ($EXIT_MSG)  [drv=$DRV pas=$PAS rl=$RL rr=$RR trunk=$TRUNK hood=${HOOD:-?}]"; EXIT_MSG=""; }
+            if [ "$ACC" = "$MIN_ACC" ] && [ "$LOCK" = 1 ] && all_closed; then
+                STATE=ARMED; DEB=0; LID_HOLD=0; ARM_T=$(now_s)
+                say "ARMED — debounce ${LOCK_DELAY}s (acc=$ACC lock=$LOCK trunk=$TRUNK hood=${HOOD:-?} doors=$DRV$PAS$RL$RR)"
+            elif [ "$WAIT_MSG" != 1 ] && ! lids_closed; then
+                LID=hood; [ "$TRUNK" != 0 ] && LID=trunk/liftgate
+                say "$LID open at exit — waiting for it to close before arming"; WAIT_MSG=1
+            fi
         fi
         ;;
 
     ARMED)
+        read_hood
         if [ "$LOCK" = 0 ]; then
             say "already locked (lock=0) — standing down. STATE=DONE"
             STATE=DONE
@@ -337,22 +418,40 @@ while :; do
             # debounce. Pause the daemon before sitting in a switched-off car;
             # the interior handle always opens a locked door from within.
             say "a door reopened — back to WAIT_EXIT (waiting for a driver-door cycle)"
-            STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; TRUNK_HOLD=0; PREV_DRV=$DRV
-        elif [ "$TRUNK" != 0 ]; then
-            # Trunk/liftgate open but all doors closed = cargo access, not
+            STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV
+        elif ! lids_closed; then
+            # Liftgate or hood open but all doors closed = cargo/frunk access, not
             # re-entry. HOLD: don't lock while it's open and pause the debounce,
             # but keep EXIT_SEEN so we resume the moment it closes (no fresh exit).
-            [ "$TRUNK_HOLD" = 1 ] || { say "trunk/liftgate open — holding (won't lock until it closes)"; TRUNK_HOLD=1; }
-            DEB=0
+            if [ "$LID_HOLD" != 1 ]; then
+                LID=hood; [ "$TRUNK" != 0 ] && LID=trunk/liftgate
+                say "$LID open — holding (won't lock until it closes)"; LID_HOLD=1
+            fi
+            DEB=0; ARM_T=""
         elif [ "$ACC" != "$MIN_ACC" ]; then
             say "acc=$ACC (not $MIN_ACC) during debounce — aborting this cycle"
             STATE=DONE
         else
-            [ "$TRUNK_HOLD" = 1 ] && { say "trunk/liftgate closed — resuming debounce"; TRUNK_HOLD=0; }
-            DEB=$((DEB + POLL_ACTIVE))
-            if [ "$DEB" -ge "$LOCK_DELAY" ]; then
-                # final FRESH pre-check right before firing
-                read_bcm
+            [ "$LID_HOLD" = 1 ] && { say "lid closed — resuming debounce"; LID_HOLD=0; ARM_T=$(now_s); }
+            # Debounce in REAL seconds (monotonic /proc/uptime), so a slow poll can't
+            # stretch LOCK_DELAY and a clock sync can't skip it; fall back to counting
+            # polls if uptime is unreadable.
+            NOW=$(now_s)
+            if [ -n "$NOW" ] && [ -n "$ARM_T" ]; then
+                WAITED=$((NOW - ARM_T))
+                # uptime is monotonic, so this can't happen — but never trust a
+                # negative wait: fall back to counting polls for this cycle.
+                if [ "$WAITED" -lt 0 ]; then
+                    say "uptime went backwards (${WAITED}s) — counting polls for this cycle instead"
+                    ARM_T=""; DEB=0; WAITED=0
+                fi
+            else DEB=$((DEB + POLL_ACTIVE)); WAITED=$DEB; fi
+            if [ "$WAITED" -ge "$LOCK_DELAY" ]; then
+                # final FRESH pre-check right before firing. The hood read takes
+                # seconds, so do it FIRST and read the cache LAST: door/lock state
+                # must be the freshest thing we hold when the lock goes out.
+                read_hood; read_bcm
+                [ "$HOOD_GUARD" = 1 ] && [ -z "$HOOD" ] && say "note: hood state unknown (no door event in the log yet) — treated as closed"
                 if precheck_ok; then
                     FIRES=$((FIRES + 1))
                     if [ "$DRY_RUN" = 1 ]; then
@@ -376,12 +475,12 @@ while :; do
                             # (Re-arming on a timer would re-fire at a driver who just
                             # climbed back in and closed his own door.)
                             say "fire $FIRES did not lock (lock=$LOCK) — need a fresh exit before retrying"
-                            STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; TRUNK_HOLD=0; PREV_DRV=$DRV
+                            STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV
                         fi
                     fi
                 else
                     say "final pre-check failed at fire time — re-arming"
-                    DEB=0
+                    DEB=0; ARM_T=$(now_s)
                 fi
             fi
         fi

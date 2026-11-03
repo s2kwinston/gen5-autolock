@@ -6,7 +6,7 @@ init hacking) and gives you an **on-screen toggle in the NEMESIS Manager**.
 
 ## What's in the package
 
-Built from the repo by `build-package.sh`, which assembles this tree and zips it:
+Built from the repo by `tools/build-package.sh`, which assembles this tree and zips it:
 
 ```
 NEMESIS.data                 declares the service + the toggle app + lifecycle hooks
@@ -17,11 +17,19 @@ gen5-autolock.conf.example   seeded to /data/nemesis/gen5-autolock.conf on insta
 ref/README.md                where you drop your own odex for the hash gate
 ```
 
+`NEMESIS.data` uses descriptor format **1.1** (NEMESIS 1.16: `package-version`,
+`short-desc`, `os`, `models`, so it lists with the right compatibility colour in the
+Package Store) and also carries the 1.0 `types=` key, so a unit still on NEMESIS 1.15
+registers the service too.
+
 ## Build
 
 ```sh
-./build-package.sh            # -> gen5.autolock.zip  (needs `zip`)
+tools/build-package.sh    # -> dist/gen5.autolock.zip + dist/gen5-autolock-install.zip
 ```
+
+Needs `zip` or a working Python. `dist/gen5-autolock-install.zip` is the finished USB
+stick: extract it to the root of a stick and insert. (It's just the two files below.)
 
 ## Install (USB)
 
@@ -61,11 +69,12 @@ Open the Manager (triple-press the **Nav** button). Two ways to control it:
 
 Edit `/data/nemesis/gen5-autolock.conf`: watch `/data/nemesis/gen5-autolock.log` across
 a few real drives to confirm it only *would* fire on a genuine park-and-exit, then set
-`DRY_RUN=0`. The hash gate expects your odex in `/data/nemesis/gen5-autolock-ref/`
-(created on install; it lives outside the package tree so an update won't wipe it) — or
-set `CHECK_ODEX=0`. See `ref/README.md`. **Until you do one of those the daemon refuses to
-run**: it logs `FATAL: reference odex missing … — refusing to run` and exits (fail-safe),
-so check the log on first install.
+`DRY_RUN=0`. The hash gate passes by itself on a verified build (2022 US EV6, firmware
+260507 — md5s built into the script). On any other firmware it logs `FATAL: framework is
+not a verified build …` and exits (fail-safe) until you pin your own odex into
+`/data/nemesis/gen5-autolock-ref/` (outside the package tree, so an update won't wipe it)
+— the **ref-odex** stick (`usb-sticks/ref-odex/`) does that with one tap and restarts the
+service — or set `CHECK_ODEX=0`. See `ref/README.md`. Check the log on first install.
 
 ## Uninstall
 

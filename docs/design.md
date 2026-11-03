@@ -23,8 +23,7 @@ in the [README](../README.md).
    guarantee. In normal use — you walk away *with* the key — the feature is unaffected.
 2. **Persistence is handled by the package.** Running every drive means something must
    start the daemon at each boot; the NEMESIS package registers it as a service that
-   NEMESIS starts at boot — **no `/system`/init change of your own** (see §7 and
-   [`install/persistence.md`](../install/persistence.md)).
+   NEMESIS starts at boot — **no `/system`/init change of your own** (see §7).
 
 ---
 
@@ -50,11 +49,15 @@ All grounded in on-car measurement and the decompiled stock framework.
 | F1 | Turning the car off auto-unlocks the doors (`mLockState` 0→1 the moment `mIgnition1`→false). |
 | F2 | The exit is visible: the driver door goes open→closed in the body-control cache. |
 | F3 | After ignition off, `mACCStatus` steps 5 → 4 (transitioning, ~6–18 s) → 3 (off-standby) → 1 → 0 (dead). The cache is live and correct throughout `acc==3`. |
-| F4 | The head unit survives to roughly 187–200 s after ignition off on runs that locked early. Shutdown tracks the *lock* event more tightly than ignition-off, so an **unlocked** unit likely stays awake somewhat longer (not directly measured). |
+| F4 | **Measured unlocked** (field-map run, 2026-11-01): ignition off at T+0; driver door opened at +13 s (`mACCStatus` stepped 4→3 on that door event, not on a timer), closed at +17 s; `acc` 3→1 at +195 s, 1→0 at +201 s, last cache read at +205 s. So the lockable window (`acc==3`) after the door closed was **178 s**. Runs that locked early died ~187–200 s after ignition off. |
 | F5 | `lockDoor(true)` = `service call com.hkmc.micom.bcm 5 i32 1`. In `IBCMService$Stub` the `onTransact` case `0x5` does `enforceInterface` → `readInt()` → non-zero ⇒ `lockDoor(true)`. No permission/ACL check, no software safety check. |
 | F6 | The MMCAN lock is a clean momentary pulse that self-releases: `C_PreCrankReq=1` now → (+1000 ms) relay `C_CtrlDrLockRlyIBOX=1` → (+500 ms) relay=0. Identical to the OEM / remote-services lock. No stuck relay. |
 | F7 | `dumpsys com.hkmc.micom.bcm` prints the live cache with labels and sends **no** CAN. Door/lock/ignition/acc are all readable from it. |
-| F8 | `mHoodStatus` and `mGearPpositionClutch` exist as fields but are **not printed** by `dumpsys` (`BcmStatus.toString()` omits them), so they are invisible to a `dumpsys`/shell reader like this daemon. The hood is *not* fundamentally unobservable, though: it arrives passively over CAN (`RES_HOODSW_STATE`) and is pushed to every registered `IBCMListener` as the 10th arg of `onDoorAllStateChanged` — a small, TX-free `app_process` listener client could read it (basis for a possible future hood-guard). The only *hood-named Binder getter*, `getHoodStatusInfo()`, is void and does trigger a CAN TX, which is why a `service call` read is avoided — but that is a safe-reads policy choice, not a hard limit. |
+| F8 | `mHoodStatus` and `mGearPpositionClutch` exist as fields but are **not printed** by `dumpsys` (`BcmStatus.toString()` omits them), so they are invisible to a `dumpsys`/shell reader like this daemon. The hood is *not* fundamentally unobservable, though: it arrives passively over CAN (`RES_HOODSW_STATE`) and is pushed to every registered `IBCMListener` as the 10th arg of `onDoorAllStateChanged` — and every stock client's `BCMCanManager` **logs it** on each door event (`D/BCMCanManager: mDoorStatus.mHoodSwitchState<n>`, seen 1,175× in captured logcats, always `0` with the hood shut). So `logcat -d -s BCMCanManager:D` is a TX-free read of the hood switch from plain shell — no listener client needed. **Verified on-car 2026-11-01:** it reads `mHoodSwitchState1` from the moment the release lever is pulled (hood on its secondary latch) until the hood is shut, and each hood transition raises its *own* `onDoorAllStateChanged` (no door movement needed). The value is unknown until the first door event of a boot — every exit produces one. This is what the daemon's hood hold reads (`HOOD_GUARD`). The only *hood-named Binder getter*, `getHoodStatusInfo()`, is void and does trigger a CAN TX, which is why a `service call` read is avoided — but that is a safe-reads policy choice, not a hard limit. |
+| F9 | **Liftgate verified** (same run): `mTrunkOpenedState` 0→1 the moment the rear liftgate opened (dash button, from the seat), 1→0 when it closed, with no door involvement. The field does track the liftgate. |
+| F10 | **Fields that are dead on this car** (never moved while exercised): `mDrvSeatbelt`/`mPasSeatbelt` (buckled empty and occupied), `mLampHazard`/`mLampHead`/`mLampTail`, `mSideMirror`, `mParkBrake`, `mEngineState` (0 even in READY). Windows log `onWindowActStateChanged`/`onWindowDetailOpenStateChanged` callbacks **without a value**; the sunroof logs `D/BCMService: RES_Warn_SunRoofOpnSta 1/0` (with a value; not used). No occupant signal exists in the cache or the log. |
+| F11 | The user-settings cache (`dumpsys com.hkmc.micom.usm`) lists `DOOR_WALKAWAYLOCK : 250` — the firmware knows the OEM walk-away-lock setting, and `250` is its "not available" sentinel (shared by other unsupported options). The OEM feature is absent on this car by configuration, not merely hidden. |
+| F12 | Toolbox facts: `date +%s` works (wall-clock debounce is possible); a `dumpsys com.hkmc.micom.bcm` read costs ~9 ms (10 calls in 0.09 s of uptime); `grep` and `cmp` exist, `printf`/`awk`/`tail` do not. |
 
 **State encodings (confirmed across all runs):**
 
@@ -125,10 +128,11 @@ All grounded in on-car measurement and the decompiled stock framework.
     real exit from someone climbing back IN, so a re-entry through the driver door reads as
     a fresh exit and it will arm (and lock) with them inside after the debounce. Pause it
     before sitting in a switched-off car (the interior handle always opens a locked door);
-  - the **trunk/liftgate** reopens while the doors stay closed (cargo access, not
-    re-entry) → **hold**: it won't lock while the liftgate is open and the debounce
-    pauses, but the exit still counts, so it resumes the moment the liftgate closes — no
-    second trip in and out of the driver's seat required.
+  - the **liftgate or the hood** opens while the doors stay closed (cargo or frunk
+    access, not re-entry) → **hold**: it won't lock while the lid is open and the
+    debounce pauses, but the exit still counts, so it resumes the moment the lid closes —
+    no second trip in and out of the driver's seat required. (Liftgate from the cache,
+    F9; hood from the system log, F8; `HOOD_GUARD=0` ignores the hood.)
 - **FIRE** — send `lockDoor(true)` once; confirm `mLockState→0` within
   `POST_FIRE_CONFIRM` s. If it locked → DONE. If not → back to **WAIT_EXIT** (keep the
   fire count). The daemon retries only after a *genuinely new* driver exit, never on a
@@ -165,8 +169,9 @@ Read a **fresh** `dumpsys com.hkmc.micom.bcm` immediately before firing. ALL mus
 
 **Deliberately not gated (not in the `dumpsys` output — F8):** the **hood/frunk**
 (`mHoodStatus` isn't in the dump, so this `dumpsys`-based daemon can't see it; locking the
-doors with the hood ajar is harmless — the hood isn't latched or trapped. It *could* be
-watched via a TX-free listener client (F8), so a hood-hold is a feasible future addition)
+doors with the hood ajar is harmless — the hood isn't latched or trapped. It *can* be
+watched TX-free via the `BCMCanManager` logcat line (F8), so a hood-hold is a feasible
+future addition once that line is confirmed to read `1` with the frunk open)
 and **gear in P** (`mGearPpositionClutch` not in the dump; ignition-off forces P on an EV,
 and we only fire at `acc==3`).
 
@@ -177,17 +182,17 @@ and we only fire at `acc==3`).
 | Knob | Default | Rationale |
 |---|---|---|
 | `POLL_DRIVE` | 5 s | Poll interval while ignition is on / idle. Nothing time-critical. |
-| `POLL_ACTIVE` | 1 s | Poll interval after ignition off. 1 s (not 3 s) because a quick exit — a driver door open for only a few seconds — can fall between slower polls and never arm. One `dumpsys` is well under a second. |
-| `LOCK_DELAY` | 30 s | Debounce after the last door closes. Long enough that reopening to grab something doesn't lock you out; short enough to stay well inside the power window. |
+| `POLL_ACTIVE` | 1 s | Poll interval after ignition off. 1 s (not 3 s) because a quick exit — a driver door open for only a few seconds — can fall between slower polls and never arm. One `dumpsys` costs ~9 ms (F12). The hood read (`logcat -d`) is **not** cheap on this HU — polls that include it ran 2–5 s apart on-car (2026-11-02) — so it runs only once the exit has been seen (WAIT_EXIT after the door edge, and ARMED). Pre-exit polls stay ~1 s; the fire can land up to ~5 s after `LOCK_DELAY` (wall-clock), which is harmless. |
+| `LOCK_DELAY` | 30 s | Debounce after the last door closes, counted in **real seconds from the monotonic `/proc/uptime`** (F12; immune to the wall clock being set after boot — the HU starts at a 2015 default and syncs later; falls back to counting polls if uptime is unreadable), so a slow poll can't stretch it and a clock sync can't skip it. Long enough that reopening to grab something doesn't lock you out; short enough to stay well inside the measured 178 s window (F4) — keep it ≤ ~120 s. |
 | `POST_FIRE_CONFIRM` | 5 s | Wait-and-recheck for `mLockState→0`. The MMCAN pulse completes in ~1.5 s (F6), so 5 s is comfortable. |
 | `MAX_FIRES` | 3 | Cap on lock attempts per stop. Prevents hammering a module that is not locking. |
 
-**Margin:** typical fire time ≈ ignition-off + exit (~20 s) + `LOCK_DELAY` (30 s) ≈
-50–65 s. The earliest observed head-unit death was ~187 s after ignition-off (and that
-is the pessimistic, locked-early reading), leaving ≥ ~2 min of margin. After the daemon
-locks, the unit shuts down ~170 s later — expected and fine; the job is done. A much
-longer window (e.g. `LOCK_DELAY` > 2 min) would need either a dedicated unlocked-hold
-measurement or `requestPwrKeepStart` (power service transaction 22) — out of scope.
+**Margin:** typical fire time ≈ ignition-off + exit (~17 s measured) + `LOCK_DELAY`
+(30 s) ≈ 50 s. Measured unlocked, the cache stayed at `acc==3` for 178 s after the door
+closed and the unit was gone at +205 s after ignition-off (F4), leaving ≈ 2 min of margin
+at the default. After the daemon locks, the unit shuts down ~170 s later — expected and
+fine; the job is done. `LOCK_DELAY` above ~120 s eats into the measured window; beyond
+it would need `requestPwrKeepStart` (power service transaction 22) — out of scope.
 
 ---
 
@@ -215,9 +220,10 @@ daemon as a service (`mode=background`): NEMESIS's watchdog starts the service m
 at boot, which starts the service — no `/system` init change of your own. `background`
 (start once per boot, no auto-restart) matches the daemon exiting cleanly at power-down.
 The Manager's Services screen then doubles as the enable/disable control. See
-[`../package/README.md`](../package/README.md) and
-[`install/persistence.md`](../install/persistence.md). It is a lightweight polling shell
-script — no `app_process`/Java is required.
+[`../package/README.md`](../package/README.md). It is a lightweight polling shell
+script — no `app_process`/Java is required. (Running it without the package is possible
+but unsupported: you then have to arrange your own boot launch, before the car is
+switched off.)
 
 ---
 
@@ -251,20 +257,15 @@ script — no `app_process`/Java is required.
   (same as stock — no worse). Lock manually in that case.
 - **Driver exits via a non-driver door** (rare) — won't arm under the driver-door-only
   trigger. Configurable via `DRIVER_DOOR_ONLY=0` at the cost of more false arming.
-- **Trunk/liftgate guard is assumed, not verified.** The daemon treats
-  `mTrunkOpenedState` as the rear liftgate: `all_closed` requires it to be `0`, so it
-  won't lock while the liftgate reads open, and it holds (see §3) while you load cargo.
-  **But the liftgate was never opened during testing** — every captured dump had
-  `mTrunkOpenedState: 0` — so there is no on-car confirmation this field actually tracks
-  the liftgate. If it doesn't, the guard is blind. Verify it (open the liftgate, check
-  the field flips to 1, or watch the log for `trunk/liftgate open — holding`) before
-  relying on it. The **frunk** (front trunk) maps to `mHoodStatus`, which this daemon does
-  not read (it isn't in `dumpsys` — F8), so a frunk left open is invisible to it and the
-  car still locks. That is harmless for the lock itself (the hood isn't latched or
-  trapped); the one real hazard is a **fob left in the frunk**, which becomes a lockout
-  when the hood shuts (the frunk has no outside/app release) — keep the fob on you. The
-  hood *could* be watched via a TX-free listener (F8); a hood-hold is a possible future
-  addition.
+- **Liftgate and hood are guarded (both verified on the reference car); windows and
+  sunroof are not.** `all_closed` requires `mTrunkOpenedState == 0` (liftgate, F9) and
+  the logcat hood switch `!= 1` (frunk, F8), and the daemon holds (§3) while either is
+  open. On another car, confirm both in the log (`trunk=1` / `hood=1` on the
+  `exit seen …` line, or `… open — holding`) before relying on them; `HOOD_GUARD=0`
+  disables the hood read if that log line doesn't exist on your firmware. The hood hold
+  does **not** cover a **fob left in the frunk**: once the hood is shut the car locks
+  normally and the frunk has no outside/app release — keep the fob on you. Windows and
+  the sunroof are not read (F10): the car locks with them open, as stock does.
 
 ---
 
@@ -295,7 +296,7 @@ All knobs live at the top of [`walkaway.sh`](../walkaway.sh) (override in the co
 ```
 POLL_DRIVE=5      POLL_ACTIVE=1       LOCK_DELAY=30    POST_FIRE_CONFIRM=5
 MAX_FIRES=3       DRIVER_DOOR_ONLY=1  MIN_ACC=3        DRY_RUN=1
-ENABLED=1         CHECK_ODEX=1
+ENABLED=1         CHECK_ODEX=1        HOOD_GUARD=1
 ```
 
 `DRY_RUN=1` (the default) logs `WOULD FIRE` and sends **no** lock. Leave it on and watch

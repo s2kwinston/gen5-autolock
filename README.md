@@ -12,7 +12,8 @@ body-control module through the stock vehicle service.
 > possible. The emergency blade key is *inside* the fob.
 > **Keep a spare key outside the car. Never run it with a person or pet inside.
 > Pause it before a valet, a car wash, or sitting in the switched-off car.**
-> It ships in test mode and sends no lock until you turn that on. Read
+> The standard installer is **live from your next stop**; a test-mode installer
+> (log only, never locks) exists if you'd rather watch it first. Read
 > [Safety](#-safety--read-this-first) and the
 > [FAQ of tested edge cases](#faq--the-edge-cases-and-what-actually-happens) first.
 
@@ -29,9 +30,10 @@ body-control module through the stock vehicle service.
 - **No occupant awareness.** It can lock with a person or pet inside. The interior door
   handle still opens from within, so it is not entrapment — but never rely on this with
   an occupant.
-- **Ships in dry-run.** `DRY_RUN=1` is the default: the daemon logs `WOULD FIRE` and
-  sends **no** lock. Watch the log across several real drives and confirm it would only
-  ever fire on a genuine park-and-exit before you set `DRY_RUN=0`.
+- **Live from the first stop** with the standard installer. If you'd rather watch it
+  first, use the **test-mode installer** (or the TEST MODE stick): the daemon then logs
+  `WOULD FIRE` and sends **no** lock until you switch it to LIVE. The daemon's own
+  built-in default is test mode, so a missing config can never make it lock.
 - **Characterized on one specific setup.** Everything here was measured on a single
   2022 US EV6 (see [Compatibility](#compatibility)). Other model years, firmwares, or
   markets may lock differently or expose different transaction codes. **Re-verify on
@@ -62,37 +64,40 @@ people only ever touch the first three.
 
 | Zip | What it is | When you need it |
 |---|---|---|
-| `gen5-autolock-install.zip` | **The installer.** Installs the daemon as a NEMESIS package; from then on it starts by itself every time the car starts — in **TEST MODE** (logs only, never locks). | Once. Re-insert a newer version to update; your settings are kept. |
+| `gen5-autolock-install.zip` | **The installer — ready to go.** Installs the daemon as a NEMESIS package; it starts by itself every time the car starts and is **LIVE from your next stop**. | Once. Re-insert a newer version to update; your settings and mode are kept. |
+| `gen5-autolock-install-testmode.zip` | The same installer, but it starts in **TEST MODE** — runs and logs `WOULD FIRE`, never locks — until you insert the GO LIVE stick. | Instead of the one above, if you'd rather watch the log for a few stops first. |
 | `gen5-autolock-go-live.zip` | Switches to **LIVE** — it really locks the car. | Once, after a few test-mode stops looked right in the log. |
 | `gen5-autolock-test-mode.zip` | Switches back to **TEST MODE** — runs and logs, never locks. | Any time you want it to stop locking without uninstalling. |
 | `gen5-autolock-custom-settings.zip` | Changes a setting — mainly the lock delay (`LOCK_DELAY=15`). Edit its text file on your computer first; **only the lines you set change**, LIVE/TEST mode stays. | When 30 s isn't the delay you want. |
 | `gen5-autolock-get-log.zip` | **Read-only.** Copies the daemon's log and settings onto the stick so you can read them on a computer. Changes nothing. | When you want to see what it did, or something looks off. |
 | `gen5-autolock-ref-odex.zip` | Accepts a car software version the daemon doesn't recognise (another model/firmware, or after a Kia update) so the safety gate lets it run. | **Only** if the log says `FATAL: framework is not a verified build`. On a 2022 US EV6 you won't need it. |
-| `gen5.autolock.zip` | The bare NEMESIS package — what's *inside* the installer zip. | Only for `nemesis install` from a shell or the Package Store. Not a USB stick by itself. |
+
+(The bare NEMESIS package, `gen5.autolock.zip`, is what's *inside* the installer zips; it's
+built by `tools/build-package.sh` for `nemesis install` from a shell and for the Package
+Store, and isn't a USB stick by itself.)
 
 ## How to use (plain-language walkthrough)
 
 **Set it up — once.**
-1. Get `gen5-autolock-install.zip` (from the Releases page, or build it with
-   `tools/build-package.sh`) and extract it to the **root** of a USB stick. (It's the package
-   zip plus a `type=install` `NEMESIS.data` — see [`package/README.md`](package/README.md).)
+1. Get `gen5-autolock-install.zip` from the Releases page and extract it to the **root**
+   of a USB stick. (It's the package zip plus a `type=install` `NEMESIS.data` — see
+   [`package/README.md`](package/README.md).)
 2. Start the car, wait for the screen to fully load, insert the stick, tap **Yes**.
-3. Nothing else on a verified car (2022 US EV6, firmware 260507): the daemon checks the
-   car's software against the build it was verified on and starts by itself. On any
-   other firmware it refuses to run until you consciously accept that firmware — insert
-   the **REF ODEX** stick (`usb-sticks/ref-odex/`), tap **Yes** (see its `README.txt`).
-4. It's now installed and **starts by itself every time you start the car.** It begins in
-   **TEST MODE** — it runs and writes a log but **does not lock yet**.
-
-**Switch it on for real — once, after you've watched it.**
-5. Drive normally a few times. (It's just logging to `/data/nemesis/gen5-autolock.log`.)
-6. When you're happy, insert the **GO LIVE** stick (`usb-sticks/go-live/`) and tap Yes.
-   Now it locks for real. (The **TEST MODE** stick, `usb-sticks/test-mode/`, puts it back
-   to logging-only anytime.)
+3. That's it. It's installed, **starts by itself every time you start the car**, and is
+   **live from your next stop**. On a verified car (2022 US EV6, firmware 260507) there is
+   nothing else to do. On any other firmware it refuses to run until you consciously
+   accept that firmware with the **REF ODEX** stick (`usb-sticks/ref-odex/`, see its
+   `README.txt`).
 
 **Every drive — automatic, no USB.**
-7. Park, switch off, get out, close the door → it locks itself about `LOCK_DELAY` seconds
+4. Park, switch off, get out, close the door → it locks itself about `LOCK_DELAY` seconds
    later (30 by default). Nothing to insert. This keeps working across reboots.
+
+**Prefer to watch it first?** Use `gen5-autolock-install-testmode.zip` in step 1 instead:
+same package, but it starts in **TEST MODE** — runs every drive and writes `WOULD FIRE` to
+`/data/nemesis/gen5-autolock.log` without locking. When you're happy, insert the
+**GO LIVE** stick (`usb-sticks/go-live/`). The **TEST MODE** stick puts it back to
+logging-only anytime.
 
 **Change the timer / other settings — anytime.** Use the **custom-settings** stick
 (`usb-sticks/custom-settings/`): edit `LOCK_DELAY=45` (etc.) in its text file and insert
@@ -151,14 +156,16 @@ the daemon at every boot** (its own service manager — no `/system` init hackin
 an **on-screen toggle in the NEMESIS Manager**.
 
 ```sh
-tools/build-package.sh    # -> dist/gen5.autolock.zip + dist/gen5-autolock-install.zip
+tools/build-package.sh    # -> dist/gen5-autolock-install.zip (LIVE), -install-testmode.zip, gen5.autolock.zip
 ```
 
 Extract `gen5-autolock-install.zip` to the root of a USB stick and insert it — it's the
 package zip plus a `type=install` `NEMESIS.data` (full steps and the file contents in
 [`package/README.md`](package/README.md)). It installs to
 `/data/nemesis/apps/gen5.autolock/`, seeds your config at
-`/data/nemesis/gen5-autolock.conf`, and starts the service **in dry-run**.
+`/data/nemesis/gen5-autolock.conf`, and starts the service — **live** (the standard
+installer seeds `DRY_RUN=0`; `gen5-autolock-install-testmode.zip` seeds `DRY_RUN=1`, log
+only). An update never touches an existing config, so your settings and mode are kept.
 
 **Framework hash gate:** the daemon refuses to run unless the vehicle framework is one
 the lock transaction was verified against (an OTA can move transaction codes and turn a
@@ -194,7 +201,7 @@ a USB stick from **[`usb-sticks/`](usb-sticks/)** — insert, tap Yes, done:
 Each is a tiny settings update, not a reinstall, and it persists. One more stick,
 **`usb-sticks/get-log/`**, changes nothing — it copies the log and a body-control snapshot
 onto the USB for reading on a computer (and for the liftgate check — see
-[Test](#test-dry-run-first)). Pre-zipped copies for a Release are produced by
+[Optional: test mode first](#optional-test-mode-first)). Pre-zipped copies for a Release are produced by
 `tools/build-sticks.sh` (into `dist/`). (Running standalone? The daemon also reads a
 `gen5-autolock.conf` next to `walkaway.sh`.)
 
@@ -204,7 +211,7 @@ typo can't make it misbehave — and the file is **parsed, never executed**. The
 | Knob | Default | Purpose |
 |---|---|---|
 | `LOCK_DELAY` | `30` | Seconds after the last door closes before locking, counted in real (wall-clock) seconds. Range 5–600, but **keep ≤ ~120**: the car only stays lockable ~178 s after the door closes (measured), so a bigger value can miss the lock entirely. |
-| `DRY_RUN` | `1` | `1` = log `WOULD FIRE`, send no lock (safe). Set `0` to actually arm. |
+| `DRY_RUN` | `1` built-in; the standard installer seeds `0` | `1` = log `WOULD FIRE`, send no lock. `0` = really lock. The GO LIVE / TEST MODE sticks flip it. |
 | `ENABLED` | `1` | `0` = installed but inactive — stands down, never locks. |
 | `DRIVER_DOOR_ONLY` | `1` | `1` = arm only on a driver-door exit; `0` = any door. |
 | `POLL_ACTIVE` | `1` | Poll interval (s) after ignition off — 1 s catches a quick exit (1–10). |
@@ -234,9 +241,10 @@ rm    /data/nemesis/gen5-autolock.off    # resume (re-arms on the next drive)
 drop it at service or a car wash — otherwise the fob gets left inside and it locks in. The
 flag survives reboots. (`ENABLED=0` in the config disables it permanently.)
 
-## Test (dry-run first)
+## Optional: test mode first
 
-With `DRY_RUN=1` (default), the daemon runs and logs but never locks. It writes to
+With the test-mode installer (or the TEST MODE stick), the daemon runs and logs but never
+locks. It writes to
 `/data/nemesis/gen5-autolock.log` (no shell? insert the **get-log** stick,
 [`usb-sticks/get-log/`](usb-sticks/get-log/), to copy that log and a body-control
 snapshot onto the USB). Over a few real stops, confirm:
@@ -250,7 +258,7 @@ snapshot onto the USB). Over a few real stops, confirm:
   then resume when you close it). If one never leaves `0`, that guard is blind on your
   firmware (see [Limitations](#limitations)).
 
-Only once that log looks right should you set `DRY_RUN=0`.
+Once that log looks right, the **GO LIVE** stick switches it to locking.
 
 ## Limitations
 

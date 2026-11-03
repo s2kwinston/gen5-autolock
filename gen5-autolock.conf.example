@@ -18,8 +18,9 @@
 #    /data/nemesis/gen5-autolock.off, to pause and delete it to resume)
 # ENABLED=1              # 0 = installed but inactive
 
-# -- send real locks. KEEP THIS 1 (dry-run) until you've watched the log over
-#    several real drives and it only ever "WOULD FIRE" on a genuine park-and-exit.
+# -- send real locks. The installer you chose seeds this (standard = 0 LIVE,
+#    test-mode = 1); the GO LIVE / TEST MODE sticks flip it. With no value at all
+#    the daemon's built-in default is 1 (never locks).
 # DRY_RUN=1              # 1 = log only, 0 = actually lock
 
 # -- arm on the driver door only (1) or any door (0, more false arming)

@@ -6,9 +6,9 @@ id=gen5.autolock
 name=Gen5 Auto-Lock (walk-away)
 type=application,service
 types=application,service
-package-version=0.1.0
+package-version=0.1.1
 short-desc="Walk-away auto-lock: locks the car once after you get out"
-detailed-desc="Locks the doors once, LOCK_DELAY seconds after you switch off, get out and shut the door. Ships in TEST MODE (logs only) until you set DRY_RUN=0. NO key-inside protection: keep a spare key outside the car. Verified on a 2022 US EV6, firmware 260507."
+detailed-desc="Locks the doors once, LOCK_DELAY seconds after you switch off, get out and shut the door. Live from the first stop (a test-mode installer exists). NO key-inside protection: keep a spare key outside the car. Verified on a 2022 US EV6, firmware 260507."
 ; Store compatibility: `os` is matched against ro.build.product (verified build:
 ; CVEV.USA.0000.V015.012.260507 = US EV6, firmware 260507); `models` against the
 ; head unit's onebin target (cvev_us). Same car on newer firmware -> "partial"

@@ -16,8 +16,9 @@
 #      (confirmed at the CAN-protocol layer; see docs/design.md §8). If
 #      you run this, keep a SPARE key OUTSIDE the car. Never rely on it with a
 #      person or pet inside — it has no occupant awareness.
-#    - SHIPS IN DRY-RUN. DRY_RUN=1 by default: it logs "WOULD FIRE" and sends
-#      no lock. Watch the log across real drives first, then set DRY_RUN=0.
+#    - DRY_RUN=1 is the BUILT-IN default: with no config it logs "WOULD FIRE"
+#      and sends no lock. The standard installer seeds DRY_RUN=0 (live from the
+#      next stop); the test-mode installer seeds 1. The USB sticks flip it.
 #    - PERSISTENCE: the NEMESIS package registers this as a service NEMESIS
 #      starts at every boot (no /system init change). Standalone? Arrange your
 #      own boot launch — see docs/design.md §7.

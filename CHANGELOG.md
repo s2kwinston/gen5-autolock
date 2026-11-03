@@ -3,18 +3,34 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-11-02
+
+Same day as 0.1.0, before any announcement: the installer now goes live by default.
+
+### Changed
+- **Two installers.** `gen5-autolock-install.zip` seeds `DRY_RUN=0` — **live from the
+  first stop**, nothing else to do on a verified car. `gen5-autolock-install-testmode.zip`
+  seeds `DRY_RUN=1` — runs and logs `WOULD FIRE`, never locks, for anyone who wants to
+  watch the log first. The daemon's built-in default stays `DRY_RUN=1` (no config = never
+  locks); an update never touches an existing config, so settings and mode survive.
+- The install hook seeds the config from the package's `gen5-autolock.conf.seed` and
+  prints the mode it ended up in. The bare package zip is no longer a release asset
+  (it's inside the installers; `tools/build-package.sh` still produces it for the store).
+- Docs rewritten around the one-stick path (README walkthrough, downloads table,
+  package README, config template).
+
 ## [0.1.0] - 2026-11-02
 
-First public release — a working reference implementation. Pre-1.0: it ships in
-dry-run and the key-inside limitation below is real, so treat it as "use with care,"
-not battle-hardened.
+First public release — a working, field-verified reference implementation. Pre-1.0:
+the key-inside limitation below is real, so treat it as "use with care," not
+battle-hardened.
 
 ### Added
 - `walkaway.sh` — the walk-away auto-lock daemon: `BOOT → DRIVING → WAIT_EXIT → ARMED`
   state machine, fresh pre-check gate, one lock per stop with a bounded retry, and a
   framework odex hash gate.
-- `DRY_RUN` mode (default on) — logs `WOULD FIRE` and sends no lock, for field-testing
-  across real drives before arming.
+- `DRY_RUN` test mode — logs `WOULD FIRE` and sends no lock. The daemon's built-in
+  default; in 0.1.0 the installer also started in it (changed in 0.1.1).
 - **External config file** (`gen5-autolock.conf`) — set `LOCK_DELAY` and every other knob
   without editing the daemon; survives updates. It is **parsed** for known `KEY=value`
   keys, never executed (a writable config can't run code as root). Values are
@@ -105,4 +121,5 @@ not battle-hardened.
   with them open, like stock. A fob shut in the frunk is still a lockout (the hood hold
   only applies while the hood is open).
 
+[0.1.1]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.0

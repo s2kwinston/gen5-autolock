@@ -1,35 +1,30 @@
 #!/usr/bin/env sh
-# Build the installable NEMESIS package zip (id: gen5.autolock) from this repo.
-# Assembles the package tree from the canonical walkaway.sh + the package/ folder,
-# then zips it (paths relative to the package root). Output: dist/gen5.autolock.zip
-# (dist/ is gitignored). Uses `zip` if present, otherwise Python's zipfile.
-# Also builds dist/gen5-autolock-install.zip: a ready USB stick (NEMESIS.data
-# type=install + the package zip) — extract it to the ROOT of a USB stick and insert.
+# Build the NEMESIS package (id: gen5.autolock) and the USB installer sticks.
+#
+#   dist/gen5-autolock-install.zip           ready-to-go installer: seeds DRY_RUN=0 (LIVE)
+#   dist/gen5-autolock-install-testmode.zip  same package, seeds DRY_RUN=1 (log only)
+#   dist/gen5.autolock.zip                   the bare LIVE package (for `nemesis install`
+#                                            from a shell, or the Package Store)
+#
+# Each stick is NEMESIS.data (type=install) + gen5.autolock.zip at its root: extract it
+# to the ROOT of a USB stick and insert. The mode comes from gen5-autolock.conf.seed,
+# written here and copied to /data/nemesis/gen5-autolock.conf by the install hook on a
+# fresh install only (an update keeps the user's config). The daemon's built-in default
+# is DRY_RUN=1, so a missing config always fails safe.
+# dist/ is gitignored. Uses `zip` if present, otherwise Python's zipfile.
 #
 # Alternative (NEMESIS's own builder): assemble the same tree and run
 #   python3 tools/make_nemesis_package.py <tree> -o gen5.autolock.zip
 set -eu
 HERE=$(cd "$(dirname "$0")/.." && pwd)      # repo root (this script lives in tools/)
-OUT=${1:-"$HERE/dist/gen5.autolock.zip"}
-STICK_OUT="${OUT%/*}/gen5-autolock-install.zip"
-mkdir -p "${OUT%/*}"
-
-STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
-
-# --- assemble the package tree ---
-cp "$HERE/package/NEMESIS.data"       "$STAGE/NEMESIS.data"
-cp "$HERE/walkaway.sh"                "$STAGE/walkaway.sh"        # the daemon = service.0
-cp "$HERE/gen5-autolock.conf.example" "$STAGE/gen5-autolock.conf.example"
-mkdir -p "$STAGE/bin" "$STAGE/scripts" "$STAGE/ref"
-cp "$HERE/package/bin/toggle.sh"      "$STAGE/bin/toggle.sh"      # app.0
-cp "$HERE/package/scripts/"*.sh       "$STAGE/scripts/"
-cp "$HERE/ref/README.md"              "$STAGE/ref/README.md"
-
-rm -f "$OUT" "$STICK_OUT"
+DIST="$HERE/dist"
+mkdir -p "$DIST"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
 # --- zip a directory (files at the zip root): prefer `zip`, else Python ---
 zip_dir() { # <src-dir> <out-zip>
+    rm -f "$2"
     if command -v zip >/dev/null 2>&1; then
         ( cd "$1" && zip -q -r -X "$2" . )
         return
@@ -54,19 +49,44 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
 PYEOF
 }
 
-zip_dir "$STAGE" "$OUT"
-echo "built: $OUT"
-echo "inspect on the unit with:  nemesis pkg-info $(basename "$OUT")"
+# --- stage the package tree with the given DRY_RUN seed and zip it ---
+build_pkg() { # <dry_run 0|1> <out-zip>
+    S="$TMP/pkg$1"; rm -rf "$S"; mkdir -p "$S/bin" "$S/scripts" "$S/ref"
+    cp "$HERE/package/NEMESIS.data"       "$S/NEMESIS.data"
+    cp "$HERE/walkaway.sh"                "$S/walkaway.sh"        # the daemon = service.0
+    cp "$HERE/gen5-autolock.conf.example" "$S/gen5-autolock.conf.example"
+    cp "$HERE/package/bin/toggle.sh"      "$S/bin/toggle.sh"      # app.0
+    cp "$HERE/package/scripts/"*.sh       "$S/scripts/"
+    cp "$HERE/ref/README.md"              "$S/ref/README.md"
+    {
+        cat "$HERE/gen5-autolock.conf.example"
+        echo ""
+        echo "# ---- set by the installer you chose: 0 = LIVE, 1 = TEST MODE. The GO LIVE /"
+        echo "# ---- TEST MODE USB sticks change it; so does the custom-settings stick."
+        echo "DRY_RUN=$1"
+    } > "$S/gen5-autolock.conf.seed"
+    zip_dir "$S" "$2"
+}
 
-# --- the USB install stick: NEMESIS.data (type=install) + the package zip ---
-STICK=$(mktemp -d)
-trap 'rm -rf "$STAGE" "$STICK"' EXIT
-cp "$OUT" "$STICK/$(basename "$OUT")"
-{
-    echo "[nemesis]"
-    echo "version=1.0"
-    echo "type=install"
-    echo "path=$(basename "$OUT")"
-} > "$STICK/NEMESIS.data"
-zip_dir "$STICK" "$STICK_OUT"
-echo "built: $STICK_OUT   (extract to the root of a USB stick, insert, tap Yes)"
+# --- wrap a package zip into a USB install stick zip ---
+build_stick() { # <pkg-zip> <out-zip>
+    S="$TMP/stick-$(basename "$2" .zip)"; rm -rf "$S"; mkdir -p "$S"
+    cp "$1" "$S/gen5.autolock.zip"
+    {
+        echo "[nemesis]"
+        echo "version=1.0"
+        echo "type=install"
+        echo "path=gen5.autolock.zip"
+    } > "$S/NEMESIS.data"
+    zip_dir "$S" "$2"
+}
+
+build_pkg 0 "$DIST/gen5.autolock.zip"
+build_stick "$DIST/gen5.autolock.zip" "$DIST/gen5-autolock-install.zip"
+build_pkg 1 "$TMP/gen5.autolock-testmode.zip"
+build_stick "$TMP/gen5.autolock-testmode.zip" "$DIST/gen5-autolock-install-testmode.zip"
+
+echo "built: $DIST/gen5.autolock.zip                   (bare LIVE package: nemesis install / Package Store)"
+echo "built: $DIST/gen5-autolock-install.zip          (USB installer — LIVE from the next stop)"
+echo "built: $DIST/gen5-autolock-install-testmode.zip (USB installer — TEST MODE, log only)"
+echo "inspect on the unit with:  nemesis pkg-info gen5.autolock.zip"

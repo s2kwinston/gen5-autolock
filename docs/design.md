@@ -4,7 +4,7 @@
 `CV_E.USA.S5W_M.V015.012.260507` (Android 4.4.2 / SDK 19, `tcc803x`).
 **Platform:** [NEMESIS](https://github.com/xwtk/hmg_nemesis) root on the head unit,
 `isSupportMMCAN = 1` (MMCAN lock path).
-**Status:** Reference implementation. Ships in dry-run; see the safety notes below and
+**Status:** Reference implementation, field-verified. The standard installer goes live on install (a test-mode installer and a built-in `DRY_RUN=1` default exist); see the safety notes below and
 in the [README](../README.md).
 
 ---

@@ -13,8 +13,10 @@ NEMESIS.data                 declares the service + the toggle app + lifecycle h
 walkaway.sh                  the daemon (service.0, kind=sh, mode=background)
 bin/toggle.sh                the toggle app (app.0) — pause/resume
 scripts/{pre,post,preun,postun}.sh   install/uninstall hooks
-gen5-autolock.conf.example   seeded to /data/nemesis/gen5-autolock.conf on install
-ref/README.md                where you drop your own odex for the hash gate
+gen5-autolock.conf.example   the documented settings template
+gen5-autolock.conf.seed      written by the build: DRY_RUN=0 (standard) or 1 (test-mode)
+                             — copied to /data/nemesis/gen5-autolock.conf on a FRESH install
+ref/README.md                how the framework hash gate works / pinning another firmware
 ```
 
 `NEMESIS.data` uses descriptor format **1.1** (NEMESIS 1.16: `package-version`,
@@ -25,15 +27,18 @@ registers the service too.
 ## Build
 
 ```sh
-tools/build-package.sh    # -> dist/gen5.autolock.zip + dist/gen5-autolock-install.zip
+tools/build-package.sh
+#  -> dist/gen5-autolock-install.zip           USB installer, LIVE from the next stop
+#  -> dist/gen5-autolock-install-testmode.zip  USB installer, TEST MODE (log only)
+#  -> dist/gen5.autolock.zip                   bare LIVE package (shell install / Package Store)
 ```
 
-Needs `zip` or a working Python. `dist/gen5-autolock-install.zip` is the finished USB
-stick: extract it to the root of a stick and insert. (It's just the two files below.)
+Needs `zip` or a working Python. The two installer zips are finished USB sticks: extract
+one to the root of a stick and insert. They differ only in the seeded `DRY_RUN` value.
 
 ## Install (USB)
 
-Put this `NEMESIS.data` at the **root** of a USB stick next to the built zip:
+Each installer stick is just these two files at the **root** of the stick:
 
 ```ini
 [nemesis]
@@ -50,9 +55,11 @@ path=gen5.autolock.zip
 
 Insert the stick, confirm the install prompt. (Or from a shell:
 `nemesis install /storage/usb0/gen5.autolock.zip`.) It installs to
-`/data/nemesis/apps/gen5.autolock/`, seeds `/data/nemesis/gen5-autolock.conf`, and
-starts the service — **in dry-run**. Re-inserting a newer zip with the same id gives
-an update prompt; your `/data/nemesis/gen5-autolock.conf` is kept.
+`/data/nemesis/apps/gen5.autolock/`, seeds `/data/nemesis/gen5-autolock.conf` from the
+package's seed (standard installer: `DRY_RUN=0`, **live from the next stop**; test-mode
+installer: `DRY_RUN=1`, log only), and starts the service. The install hook prints which
+mode it ended up in. Re-inserting a newer zip with the same id gives an update prompt;
+your `/data/nemesis/gen5-autolock.conf` — settings **and** mode — is kept.
 
 ## Use it from the NEMESIS Manager
 
@@ -65,13 +72,15 @@ Open the Manager (triple-press the **Nav** button). Two ways to control it:
   pause flag (`/data/nemesis/gen5-autolock.off`). This survives reboots: paused stays
   paused until you Launch again to resume.
 
-## Arm it (leave dry-run first)
+## Modes and the framework gate
 
-Edit `/data/nemesis/gen5-autolock.conf`: watch `/data/nemesis/gen5-autolock.log` across
-a few real drives to confirm it only *would* fire on a genuine park-and-exit, then set
-`DRY_RUN=0`. The hash gate passes by itself on a verified build (2022 US EV6, firmware
-260507 — md5s built into the script). On any other firmware it logs `FATAL: framework is
-not a verified build …` and exits (fail-safe) until you pin your own odex into
+LIVE vs TEST MODE is a line in `/data/nemesis/gen5-autolock.conf` (`DRY_RUN=0` / `1`);
+the GO LIVE and TEST MODE USB sticks flip it, the custom-settings stick changes the
+delay. The daemon's built-in default is `DRY_RUN=1`, so a missing config never locks.
+
+The hash gate passes by itself on a verified build (2022 US EV6, firmware 260507 — md5s
+built into the script). On any other firmware it logs `FATAL: framework is not a verified
+build …` and exits (fail-safe) until you pin your own odex into
 `/data/nemesis/gen5-autolock-ref/` (outside the package tree, so an update won't wipe it)
 — the **ref-odex** stick (`usb-sticks/ref-odex/`) does that with one tap and restarts the
 service — or set `CHECK_ODEX=0`. See `ref/README.md`. Check the log on first install.

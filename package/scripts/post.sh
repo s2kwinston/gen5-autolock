@@ -44,6 +44,6 @@ echo "    delay with the custom-settings stick. Log: $ND/gen5-autolock.log"
 echo "  * Framework hash gate: runs as-is on a verified build (2022 US EV6, fw 260507)."
 echo "    Other firmware: it refuses to run until you pin your own odex (ref-odex USB"
 echo "    stick -> $ND/gen5-autolock-ref/) or set CHECK_ODEX=0. See ref/README.md."
-echo "  * Toggle from NEMESIS Manager: Services -> autolock -> Start/Stop, or"
-echo "    Packages -> Gen5 Auto-Lock -> Launch (pause/resume)."
+echo "  * Pause/resume from NEMESIS Manager: My Packages -> Gen5 Auto-Lock -> Launch;"
+echo "    or Services -> autolock -> Start/Stop."
 exit 0

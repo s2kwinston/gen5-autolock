@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Docs: NEMESIS Manager navigation updated for 1.16 (**My Packages** → Gen5 Auto-Lock →
+  Launch; Launch shows `PAUSED` / `RESUMED` on screen). On NEMESIS 1.16.4+ a stopped
+  service stays stopped until started again (on 1.15 it returned at the next boot).
+  Verified on NEMESIS 1.16.4: the package and its running service survived the 1.15 →
+  1.16.4 update untouched.
+
 ## [0.1.1] - 2026-11-02
 
 Same day as 0.1.0, before any announcement: the installer now goes live by default.

@@ -282,8 +282,10 @@ misbehaving.
 
 ### Runtime on/off
 Three ways, in order of convenience once the package is installed:
-- **Manager → Services → `autolock` → Start/Stop** — shows state; disables for the session.
-- **Manager → Packages → Launch** — runs `toggle.sh`, flipping the pause flag.
+- **Manager → My Packages → Gen5 Auto-Lock → Launch** — runs `toggle.sh`, flipping the
+  pause flag (NEMESIS 1.16+ shows `PAUSED` / `RESUMED` on screen).
+- **Manager → Services → `autolock` → Start/Stop** — shows state. On NEMESIS 1.16.4+ a
+  stopped service stays stopped until started again; on 1.15 it returned at the next boot.
 - **Shell:** `touch /data/nemesis/gen5-autolock.off` pauses (stands down, checked every
   poll — no restart); delete it to resume. The flag lives under `/data/nemesis` so it
   **persists across reboots** (NOT `/data/local/tmp`, which NEMESIS wipes on reboot).

@@ -63,14 +63,15 @@ your `/data/nemesis/gen5-autolock.conf` — settings **and** mode — is kept.
 
 ## Use it from the NEMESIS Manager
 
-Open the Manager (triple-press the **Nav** button). Two ways to control it:
+Open the Manager (three quick presses of the **Nav** button). Two ways to control it:
 
-- **Services → `autolock` → Start / Stop** — the Services list shows its running/stopped
-  state, so this is a toggle *with visible status*. Stop disables it for the session;
-  it starts again on the next boot.
-- **Packages → Gen5 Auto-Lock → Launch** — runs `toggle.sh`, which flips a persistent
+- **My Packages → Gen5 Auto-Lock → Launch** — runs `toggle.sh`, which flips a persistent
   pause flag (`/data/nemesis/gen5-autolock.off`). This survives reboots: paused stays
-  paused until you Launch again to resume.
+  paused until you Launch again to resume. On NEMESIS 1.16+ the screen shows what the
+  script printed (`PAUSED` / `RESUMED`).
+- **Services → `autolock` → Start / Stop** — the Services list shows its running/stopped
+  state, so this is a toggle *with visible status*. On NEMESIS 1.16.4+ a stopped service
+  stays stopped until you press Start; on 1.15 it came back at the next boot.
 
 ## Modes and the framework gate
 

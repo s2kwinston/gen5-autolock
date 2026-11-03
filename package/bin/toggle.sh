@@ -1,6 +1,7 @@
 #!/system/bin/sh
 # gen5-autolock toggle — flips the pause flag the daemon checks each poll.
-# Run it from NEMESIS Manager: Packages -> Gen5 Auto-Lock -> Launch.
+# Run it from NEMESIS Manager: My Packages -> Gen5 Auto-Lock -> Launch (NEMESIS 1.16+
+# shows the line this prints on screen).
 # Flag lives under /data/nemesis so it survives a reboot (the daemon stays
 # installed and running either way; "paused" just means it won't lock).
 export PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin

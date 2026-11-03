@@ -104,10 +104,11 @@ logging-only anytime.
 it. That's a tiny settings update, *not* a reinstall; the setting sticks. Full steps are
 on each stick's `README.txt`.
 
-**Turn it off / pause.** Open the NEMESIS Manager (triple-press the **Nav** button) →
-**Services → `autolock` → Stop** (starts again next boot), or **Packages → Launch** to
-pause until you Launch again. Or use the **TEST MODE** stick (logs only), or `ENABLED=0`
-in the settings to disable it for good.
+**Turn it off / pause.** Open the NEMESIS Manager (three quick presses of the **Nav**
+button) → **My Packages → Gen5 Auto-Lock → Launch** to pause (it shows PAUSED on screen;
+Launch again to resume), or **Services → `autolock` → Stop** to halt it (on NEMESIS 1.16.4+
+it stays stopped until you press Start; on 1.15 it came back at the next boot). Or use the
+**TEST MODE** stick (logs only), or `ENABLED=0` in the settings to disable it for good.
 
 > ⚠️ Keep a **spare key outside the car** — it can lock a key inside (see
 > [Safety](#-safety--read-this-first)).
@@ -119,7 +120,7 @@ in the settings to disable it for good.
 | Vehicle | 2022 US Kia EV6 GT-Line |
 | Head unit | Gen5W AVNT (`tcc803x`), Android 4.4.2 (KitKat) |
 | Firmware | `CV_E.USA.S5W_M.V015.012.260507` |
-| Root | [NEMESIS](https://github.com/xwtk/hmg_nemesis) |
+| Root | [NEMESIS](https://github.com/xwtk/hmg_nemesis) 1.15 or 1.16.x — tested on 1.15 and 1.16.4 |
 | Lock path | `IBCMService.lockDoor(true)` over the MMCAN body relay |
 
 Other EV6 variants *may* work, but the lock behavior — especially the key-inside
@@ -224,11 +225,14 @@ typo can't make it misbehave — and the file is **parsed, never executed**. The
 
 ### Turn it on/off
 
-**From the NEMESIS Manager** (triple-press the Nav button) — if you installed the package:
+**From the NEMESIS Manager** (three quick presses of the Nav button) — if you installed
+the package:
+- **My Packages → Gen5 Auto-Lock → Launch** — flips a persistent pause flag that
+  **survives reboots** (stays paused until you Launch again). On NEMESIS 1.16+ the screen
+  shows `PAUSED` / `RESUMED` so you know which way it went.
 - **Services → `autolock` → Start / Stop** — shows running/stopped state; a toggle with
-  visible status. Stop disables it for the session; it starts again next boot.
-- **Packages → Gen5 Auto-Lock → Launch** — flips a persistent pause flag that **survives
-  reboots** (stays paused until you Launch again).
+  visible status. On NEMESIS 1.16.4+ a stopped service **stays stopped** until you press
+  Start (on 1.15 it came back at the next boot).
 
 **From a shell** (either install mode), no restart needed:
 
@@ -307,7 +311,8 @@ logic, exercised on the bench against replayed car states (the real script, not 
   lockable 178 s after the door closes).
 - **I get out, then get back in.** It cannot tell re-entry from a fresh exit: when you
   close the driver door it re-arms and locks with you inside after the delay. **By
-  design.** Pause it first (Manager → Launch, or the TEST MODE stick). The interior handle
+  design.** Pause it first (Manager → My Packages → Gen5 Auto-Lock → Launch, or the TEST
+  MODE stick). The interior handle
   still opens the door.
 - **I reopen a door during the countdown to grab something.** It drops back to waiting
   and needs a fresh driver-door close, then the full delay again. **By design.**

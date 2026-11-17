@@ -36,7 +36,7 @@ Library: **NimBLE-Arduino** (h2zero), 2.x. Core: **esp32** by Espressif, 3.x.
 
 ## Build and flash (arduino-cli)
 
-Use this FQBN for both boards; it's the tested build:
+Use this FQBN for the Waveshare and the Adafruit; it's the tested build:
 
 ```
 esp32:esp32:adafruit_qtpy_esp32s3_n4r2:USBMode=default,CDCOnBoot=cdc
@@ -46,6 +46,11 @@ esp32:esp32:adafruit_qtpy_esp32s3_n4r2:USBMode=default,CDCOnBoot=cdc
 |---|---|
 | Waveshare ESP32-S3 Mini (ESP32-S3FH4R2) | **Tested on the car** with the FQBN above |
 | Adafruit QT Py ESP32-S3, 4 MB flash / 2 MB PSRAM (also ESP32-S3FH4R2) | Same chip and build; not tested on a car |
+| Seeed Studio XIAO ESP32S3 (ESP32-S3R8, 8 MB flash) | Use `esp32:esp32:XIAO_ESP32S3:USBMode=hwcdc,CDCOnBoot=cdc` instead. Compiles; not tested on a car |
+
+The XIAO needs `USBMode=hwcdc` (the chip's built-in USB Serial/JTAG, Espressif id
+`303a:1001`). Its board definition's USB-OTG mode reports Seeed's vendor id `2886`, which
+`key-reader.sh` doesn't accept (`KEY_USB_VIDS`), so the car would treat it as offline.
 
 Both boards carry the same ESP32-S3FH4R2, and the firmware uses no board pins (radio and
 USB only), so the QT Py board definition fits the Waveshare too. It also gives the board

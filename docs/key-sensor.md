@@ -24,6 +24,7 @@ has actually left** — and holds off while it can still hear the key in the cab
 | Bluetooth key tag | [Blue Charm Beacons BC011 MultiBeacon](https://link.amazon/B03fw6GIw) | Must keep a **fixed address** (the BC011 does). AirTag-style trackers rotate their address for privacy and **won't work**. |
 | ESP32-S3 board | [Waveshare ESP32-S3 Mini (ESP32-S3FH4R2)](https://link.amazon/B0cfigVZC) | **The tested board.** Its RGB LED isn't used by the firmware, so it stays dark. |
 | *or* | [Adafruit QT Py ESP32-S3, 4 MB flash / 2 MB PSRAM](https://www.adafruit.com/product/5700) | Same chip (ESP32-S3FH4R2) and the same firmware build, so it should behave identically, but it hasn't been tested on a car. |
+| *or* | [Seeed Studio XIAO ESP32S3](https://link.amazon/B0f1eFTdo) | An ESP32-S3 with its own USB port and an **external antenna (attach it)**. A different chip variant (8 MB flash / 8 MB PSRAM) with its **own board settings** (step 3). The firmware builds for it, but it hasn't been tested on a car. |
 | USB-A to USB-C cable | any **data** cable | Many cheap cables are charge-only and the board won't show up at all. Short is better. |
 | To set it up | a computer, and an **Android** phone | The phone is only for reading the tag's address (iPhones hide it). |
 
@@ -33,7 +34,9 @@ qualifying purchases, at no extra cost to you.</sub>
 **Buying a different board?** It must be an **ESP32-S3** (or another ESP32 with BLE) that
 uses the chip's **own USB port**. Avoid boards with a separate USB-to-serial chip
 (CH340, CH343, CP2102): the head unit only has the standard USB serial driver and won't
-see them.
+see them. The car's reader also only opens a board that identifies itself with USB vendor
+id `239a` or `303a`; the settings in step 3 give you one of those, but another board's
+own Arduino setting may not.
 
 ## 1. Set up the tag
 
@@ -80,26 +83,32 @@ most of it downloading.
    ```
    For example `"A1:B2:C3:D4:E5:F6"`. Upper or lower case both work. Save.
 
-**Choose the board settings** (Tools menu). Use these for **either** board, then pick the
-board's port under **Tools → Port**:
+**Choose the board settings** (Tools menu), then pick the board's port under
+**Tools → Port**:
 
-| Setting | Value |
-|---|---|
-| Board | `Adafruit QT Py ESP32-S3 (4M Flash 2M PSRAM)` |
-| USB Mode | `USB-OTG (TinyUSB)` |
-| USB CDC On Boot | `Enabled` |
+| Setting | Waveshare or Adafruit | Seeed XIAO ESP32S3 |
+|---|---|---|
+| Board | `Adafruit QT Py ESP32-S3 (4M Flash 2M PSRAM)` | `XIAO_ESP32S3` |
+| USB Mode | `USB-OTG (TinyUSB)` | **`Hardware CDC and JTAG`** |
+| USB CDC On Boot | `Enabled` | `Enabled` |
 
 Yes, choose the Adafruit entry even for the Waveshare board: both boards use the same
 chip, the firmware doesn't use any board-specific pins, and this exact setting is what the
 tested sensor runs. (It also makes the board identify itself with a USB id the car's
 reader looks for.)
 
+For the XIAO, use its own board entry but switch **USB Mode** to `Hardware CDC and JTAG`:
+in that mode it identifies itself with Espressif's USB id, which the car's reader accepts.
+With `USB-OTG (TinyUSB)` it would use Seeed's own id, and the car would ignore it
+("key sensor offline").
+
 **Upload:**
 
 8. Plug the board into the computer and click **Upload** (the → arrow).
 9. If it says it can't connect, put the board into download mode by hand: hold the
-   **BOOT** button, tap **RESET** (RST), let go of **BOOT**. Choose the port again (it may
-   change), click **Upload** again.
+   **BOOT** button, tap **RESET** (RST), let go of **BOOT**. On the XIAO they're the tiny
+   buttons marked **B** and **R**. Choose the port again (it may change), click **Upload**
+   again.
 10. When it says *Done uploading*, tap **RESET** or unplug and replug the board.
 
 The board's LED stays off; that's normal. The serial lines in the next step are its only

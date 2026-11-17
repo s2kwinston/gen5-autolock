@@ -33,8 +33,10 @@ plain installer behaves exactly as 0.1.1.
 ### Added
 - **ESP32 firmware** (`esp32/key_scanner`) with build notes (`esp32/README.md`). You set
   your own tag's address (`TAG_ADDRESS`, upper or lower case); until it's set, the board
-  reports nothing and the car fails safe. Tested board: Adafruit QT Py ESP32-S3
-  (4 MB / 2 MB PSRAM); it also builds for the Waveshare ESP32-S3 Mini (untested on a car).
+  reports nothing and the car fails safe. Tested board: Waveshare ESP32-S3 Mini
+  (ESP32-S3FH4R2), built with the Arduino "Adafruit QT Py ESP32-S3 (4M Flash 2M PSRAM)"
+  board setting; the Adafruit QT Py ESP32-S3 has the same chip but is untested on a car.
+  (Corrected after release: the first version of these notes had the two boards swapped.)
   The scanning logic is what ran on the test car; the address handling is new for
   publishing and so far compile-checked only.
 

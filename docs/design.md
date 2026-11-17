@@ -323,7 +323,7 @@ actually arm.
 
 User guide: [key-sensor.md](key-sensor.md). Firmware: [`../esp32/`](../esp32/).
 
-**Pieces.** A BLE tag with a fixed address on the key ring; an ESP32-S3 on the head
+**Pieces.** A BLE tag with a fixed address on the key ring; an ESP32-S3 (tested: Waveshare ESP32-S3 Mini) on the head
 unit's USB port running `key_scanner`, which scans 1.2 s of every 2.5 s and prints
 `KEY 1 <rssi> …` (heard), `KEY 0 …` (listened the whole window, not heard) or `ERR …`
 (didn't provably listen — never counted as absence). `key-reader.sh` (started by the
@@ -333,7 +333,8 @@ daemon when `KEY_GATE=1`, single instance per boot) turns the lines into
 **Picking the port.** The reference head unit already has its own `/dev/ttyACM0`/`ttyACM1`
 (its LG Innotek cellular modem, held by `rild`) before any board is plugged in. The reader
 opens a `ttyACM*` **only** if sysfs says its USB vendor is the board's (`KEY_USB_VIDS`,
-default `239a` Adafruit, `303a` Espressif); every other node is skipped and never opened
+default `239a`, which the tested build reports via its Adafruit board definition, and
+`303a` Espressif); every other node is skipped and never opened
 or reconfigured.
 
 **The decision** (at the lock point, after `LOCK_DELAY`), one of:

@@ -22,8 +22,8 @@ has actually left** — and holds off while it can still hear the key in the cab
 | Part | Tested | Notes |
 |---|---|---|
 | Bluetooth key tag | [Blue Charm Beacons BC011 MultiBeacon](https://link.amazon/B03fw6GIw) | Must keep a **fixed address** (the BC011 does). AirTag-style trackers rotate their address for privacy and **won't work**. |
-| ESP32-S3 board | [Adafruit QT Py ESP32-S3, 4 MB flash / 2 MB PSRAM](https://www.adafruit.com/product/5700) | **The tested board.** |
-| *or* | [Waveshare ESP32-S3 Mini](https://link.amazon/B0cfigVZC) | Same chip family; the firmware builds for it, but it has **not been tested on a car yet**. |
+| ESP32-S3 board | [Waveshare ESP32-S3 Mini (ESP32-S3FH4R2)](https://link.amazon/B0cfigVZC) | **The tested board.** Its RGB LED isn't used by the firmware, so it stays dark. |
+| *or* | [Adafruit QT Py ESP32-S3, 4 MB flash / 2 MB PSRAM](https://www.adafruit.com/product/5700) | Same chip (ESP32-S3FH4R2) and the same firmware build, so it should behave identically, but it hasn't been tested on a car. |
 | USB-A to USB-C cable | any **data** cable | Many cheap cables are charge-only and the board won't show up at all. Short is better. |
 | To set it up | a computer, and an **Android** phone | The phone is only for reading the tag's address (iPhones hide it). |
 
@@ -80,15 +80,19 @@ most of it downloading.
    ```
    For example `"A1:B2:C3:D4:E5:F6"`. Upper or lower case both work. Save.
 
-**Choose the board settings** (Tools menu), then pick the board's port under **Tools → Port**:
+**Choose the board settings** (Tools menu). Use these for **either** board, then pick the
+board's port under **Tools → Port**:
 
-| Setting | Adafruit QT Py ESP32-S3 | Waveshare ESP32-S3 Mini |
-|---|---|---|
-| Board | `Adafruit QT Py ESP32-S3 (4M Flash 2M PSRAM)` | `ESP32S3 Dev Module` |
-| USB Mode | `USB-OTG (TinyUSB)` | `USB-OTG (TinyUSB)` |
-| USB CDC On Boot | `Enabled` | `Enabled` |
-| Flash Size | (preset) | `4MB (32Mb)` |
-| PSRAM | (preset) | `QSPI PSRAM` |
+| Setting | Value |
+|---|---|
+| Board | `Adafruit QT Py ESP32-S3 (4M Flash 2M PSRAM)` |
+| USB Mode | `USB-OTG (TinyUSB)` |
+| USB CDC On Boot | `Enabled` |
+
+Yes, choose the Adafruit entry even for the Waveshare board: both boards use the same
+chip, the firmware doesn't use any board-specific pins, and this exact setting is what the
+tested sensor runs. (It also makes the board identify itself with a USB id the car's
+reader looks for.)
 
 **Upload:**
 

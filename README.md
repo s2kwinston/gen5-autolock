@@ -75,7 +75,7 @@ Gen5 Auto-Lock → Launch**. Settings, test mode, logs and the other USB sticks:
 | Firmware | `CV_E.USA.S5W_M.V015.012.260507` |
 | Root | [NEMESIS](https://github.com/xwtk/hmg_nemesis) 1.15 or 1.16.x (tested on 1.15 and 1.16.4) |
 | Lock path | `IBCMService.lockDoor(true)` over the MMCAN body relay |
-| Key sensor | Adafruit QT Py ESP32-S3 + Blue Charm BC011 tag (see [the guide](docs/key-sensor.md)) |
+| Key sensor | Waveshare ESP32-S3 Mini + Blue Charm BC011 tag (see [the guide](docs/key-sensor.md)) |
 
 Other EV6 variants *may* work, but the lock behavior, especially with a key inside, was
 only established on the setup above. On other firmware the daemon refuses to run until

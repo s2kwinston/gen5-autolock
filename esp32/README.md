@@ -36,22 +36,36 @@ Library: **NimBLE-Arduino** (h2zero), 2.x. Core: **esp32** by Espressif, 3.x.
 
 ## Build and flash (arduino-cli)
 
-| Board | FQBN | Status |
-|---|---|---|
-| Adafruit QT Py ESP32-S3, 4 MB flash / 2 MB PSRAM | `esp32:esp32:adafruit_qtpy_esp32s3_n4r2:USBMode=default,CDCOnBoot=cdc` | **Tested on the car** |
-| Waveshare ESP32-S3 Mini (ESP32-S3FH4R2) | `esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PSRAM=enabled` | Compiles; not yet tested on a car |
+Use this FQBN for both boards; it's the tested build:
+
+```
+esp32:esp32:adafruit_qtpy_esp32s3_n4r2:USBMode=default,CDCOnBoot=cdc
+```
+
+| Board | Status |
+|---|---|
+| Waveshare ESP32-S3 Mini (ESP32-S3FH4R2) | **Tested on the car** with the FQBN above |
+| Adafruit QT Py ESP32-S3, 4 MB flash / 2 MB PSRAM (also ESP32-S3FH4R2) | Same chip and build; not tested on a car |
+
+Both boards carry the same ESP32-S3FH4R2, and the firmware uses no board pins (radio and
+USB only), so the QT Py board definition fits the Waveshare too. It also gives the board
+Adafruit's USB vendor id `239a`, which is what the tested setup reports. The generic
+`esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PSRAM=enabled` also
+compiles (it reports Espressif's `303a`, also accepted) but hasn't been run on a car.
 
 ```sh
+FQBN="esp32:esp32:adafruit_qtpy_esp32s3_n4r2:USBMode=default,CDCOnBoot=cdc"
 arduino-cli core install esp32:esp32
 arduino-cli lib install NimBLE-Arduino
-arduino-cli compile --fqbn "<FQBN from the table>" key_scanner
-arduino-cli upload  --fqbn "<FQBN from the table>" -p <port> key_scanner
+arduino-cli compile --fqbn "$FQBN" key_scanner
+arduino-cli upload  --fqbn "$FQBN" -p <port> key_scanner
 ```
 
 `USBMode=default` is USB-OTG (TinyUSB) and `CDCOnBoot=cdc` gives a plain CDC serial
 device: no USB drive, no REPL. On the reference head unit it appears as `/dev/ttyACM2`
 (its built-in cellular modem already owns `ttyACM0`/`ttyACM1`). `key-reader.sh` picks the
-board by USB vendor id (`239a` Adafruit, `303a` Espressif) and never opens anything else.
+board by USB vendor id (`239a` from the build above, or `303a` Espressif) and never opens
+anything else.
 
 If an upload can't connect, put the board in download mode by hand: hold **BOOT**, tap
 **RESET**, release **BOOT**, upload again, then tap **RESET** (or unplug and replug) to start

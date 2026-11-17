@@ -225,10 +225,11 @@ asleep first.
   parked right against the house; parked farther out, it didn't.
 - **Standing near the car** holds the lock while it hears your key, and past the 3-minute
   window it won't lock at all.
-- **Your passenger getting out after you** is fine (since 0.2.3): it starts over once every
-  door is closed and still counts from when you got out. **A rear door opening after you've
-  gotten out** means no auto-lock that stop unless the driver door opens and closes again
-  (someone may have just been put in the back). Both are bench-tested, not yet on the car.
+- **A passenger or rear door opening after you've gotten out** means no auto-lock that stop
+  unless the driver door opens and closes again, and the screen says so (someone may have
+  got back in, or been put in the back). With `PASSENGER_REARM=1` the passenger door
+  re-arms once every door is closed instead, still counting from when you got out. All
+  bench-tested, not yet on the car.
 - **The sensor doesn't detect people.** It can still lock with someone inside; see the FAQ.
 - **Hazard flash ("key left inside"):** log-only (`HAZARD_LIVE=0`) and untested on a car.
   It also can't yet tell "key inside" from "you standing next to the car". Leave it off.

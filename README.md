@@ -43,6 +43,8 @@ After you park, turn the car off, get out and close the door, it locks the car *
 It only ever **locks**. It has no unlock path, never fights a lock you do yourself, and
 arms only after it has seen a real drive. The head unit stays awake only about 3 minutes
 from when you open the door to get out; if you linger longer, lock with the fob as usual.
+If a passenger or rear door opens after you get out, it won't auto-lock that stop unless
+the driver door opens and closes again, and it tells you on screen.
 [FAQ: what happens in every edge case](docs/faq.md).
 
 ## Choose your setup

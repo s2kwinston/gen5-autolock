@@ -28,6 +28,11 @@
 # -- arm on the driver door only (1) or any door (0, more false arming)
 # DRIVER_DOOR_ONLY=1
 
+# -- front passenger door opening after you got out (only with DRIVER_DOOR_ONLY=1):
+#    0 = no auto-lock until the driver door opens and closes again (a passenger who gets
+#    back in isn't locked in); 1 = re-arm once every door is closed
+# PASSENGER_REARM=0
+
 # -- poll/timing (rarely need changing)
 # POLL_ACTIVE=1          # poll interval after ignition off (s), 1–10
 # POLL_DRIVE=5           # poll interval while driving/idle (s), 1–30

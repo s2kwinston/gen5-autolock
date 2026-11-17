@@ -47,21 +47,31 @@ exercised on the bench against replayed car states (the real script, not a model
   close the driver door it re-arms and locks with you inside after the delay (with the
   sensor: it holds, because it hears your key). **By design.** Pause it first (NEMESIS
   Manager → My Packages → Gen5 Auto-Lock → Launch).
-- **My passenger gets out after me.** The countdown starts over once every door is closed
-  again; no need to touch the driver door. With the sensor, it still counts from when *you*
-  got out, so it locks once your key is gone. **By design** (bench-tested; since 0.2.3.
-  Before that it waited for the driver door and, on-car, didn't lock that stop).
+- **My passenger gets out after me.** By default it **won't auto-lock that stop** unless
+  the driver door opens and closes again, and the screen says so. Your passenger might get
+  back in and stay, and someone left inside may not be able to unlock it from inside (see
+  above). Once they're out, open and shut the driver door, or lock with the fob. If you'd
+  rather have it re-arm once every door is closed, set `PASSENGER_REARM=1` with the
+  custom-settings stick; with the sensor, it then still counts from when *you* got out.
+  A passenger door that was already open when you shut the driver door (getting out
+  together) is fine either way. **By design** (bench-tested; the default since 0.2.4. 0.2.3
+  re-armed by default).
 - **A rear door opens after I've gotten out** (kids getting out after you, a bag from the
   back seat, or putting a child or pet *in*). It **won't auto-lock that stop** unless the
-  driver door opens and closes again. From door data alone, someone getting out of the back
-  looks the same as someone being put in, and with the child lock on they couldn't open the
-  door from inside. Once everyone's out, open and shut the driver door, or lock with the
-  fob. A rear door that was already open when you shut the driver door (everyone getting
-  out together) is fine. **By design** (bench-tested; since 0.2.3).
+  driver door opens and closes again, and the screen says so. From door data alone,
+  someone getting out of the back looks the same as someone being put in, and with the
+  child lock on they couldn't open the door from inside. Once everyone's out, open and shut
+  the driver door, or lock with the fob. A rear door that was already open when you shut
+  the driver door (everyone getting out together) is fine. **By design** (bench-tested;
+  since 0.2.3).
+- **A bag goes in the back seat before the drive and stays there.** It locks as usual: it
+  only watches doors opened *after* you get out, and it can't tell a bag from a child or a
+  pet. Check the back seat yourself.
 - **I reopen the driver door during the countdown.** It drops back to waiting and starts
   over when the driver door closes again. **By design.**
-- **My passenger gets back in after I've walked off.** Once the doors are shut it locks with
-  them inside (see "Someone stays in the car" above). **By design.**
+- **My passenger gets back in after I've walked off.** By default it won't auto-lock that
+  stop (see "My passenger gets out after me"). With `PASSENGER_REARM=1`, once the doors are
+  shut it locks with them inside (see "Someone stays in the car" above). **By design.**
 - **The head unit wakes as I walk up (approach unlock).** That isn't a drive: it arms only
   after it has seen ignition on, so a boot-on-approach can never lock you in while you get
   seated. **By design.**

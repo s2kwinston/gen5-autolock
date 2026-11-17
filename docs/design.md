@@ -128,18 +128,22 @@ All grounded in on-car measurement and the decompiled stock framework.
   double-send). `acc<3` → DEAD. A reopen is handled by *what* reopened:
   - the **driver door** reopens → WAIT_EXIT; it arms again when the driver door closes
     (a fresh exit);
-  - only the **front passenger door** reopens (a passenger getting out after the driver)
+  - only the **front passenger door** reopens (a passenger getting out after the driver):
+    by default (`PASSENGER_REARM=0`, since 0.2.4) it's handled like a rear door below —
+    the passenger may get back in and stay, and on the reference car someone left inside
+    couldn't unlock with the inside button. With `PASSENGER_REARM=1` (the 0.2.3 default)
     → WAIT_EXIT with the exit kept: it re-arms as soon as every door is closed again, no
-    new driver-door cycle (since 0.2.3; before that it waited for one and, if none came,
-    never locked). The debounce restarts from that close; the key gate keeps the
+    new driver-door cycle. The debounce restarts from that close; the key gate keeps the
     **driver's** exit as its reference, so a passenger lingering after the key has left
     doesn't read as "the key was already silent at the exit";
   - a **rear door** reopens → WAIT_EXIT with the exit dropped: a fresh driver-door
-    open→close is required. Door data can't tell someone getting out of the back from a
-    child or pet being put *in*, and a rear door with the child lock on can't be opened
-    from inside. The same applies in WAIT_EXIT: a rear door that *newly* opens after the
-    exit was seen cancels it (0.2.2 let one slip through while it waited for the other
-    doors); a rear door already open when the driver door closed doesn't;
+    open→close is required, and a toast says it won't auto-lock until then (since 0.2.4).
+    Door data can't tell someone getting out of the back from a child or pet being put
+    *in*, and a rear door with the child lock on can't be opened from inside. The same
+    applies in WAIT_EXIT: a rear door (or, with `PASSENGER_REARM=0`, the passenger door)
+    that *newly* opens after the exit was seen cancels it (0.2.2 let a rear door slip
+    through while it waited for the other doors; 0.2.3 let the passenger door through
+    while it waited for the liftgate); one already open when the driver door closed doesn't;
   - NOTE: none of this is occupant protection — the daemon cannot tell a real exit from
     someone climbing back IN, so a re-entry followed by a close arms and locks with them
     inside after the debounce (without the key sensor, or when the key is gone). On the

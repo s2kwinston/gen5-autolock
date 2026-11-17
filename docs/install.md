@@ -125,6 +125,7 @@ can't make it misbehave, and the file is **parsed, never executed**.
 | `DRY_RUN` | `1` built-in; the installers seed `0` (test-mode: `1`) | `1` = log `WOULD FIRE`, send no lock. `0` = really lock. |
 | `ENABLED` | `1` | `0` = installed but inactive: stands down, never locks. |
 | `DRIVER_DOOR_ONLY` | `1` | `1` = arm only on a driver-door exit; `0` = any door. |
+| `PASSENGER_REARM` | `0` | Front passenger door opening after you got out. `0` = no auto-lock that stop unless the driver door opens and closes again (a passenger who gets back in isn't locked in). `1` = re-arm once every door is closed (the 0.2.3 behavior). Only with `DRIVER_DOOR_ONLY=1`. |
 | `HOOD_GUARD` | `1` | `1` = hold while the hood/frunk is open (read TX-free from the system log). |
 | `POLL_ACTIVE` | `1` | Poll interval (s) after ignition off (1–10). |
 | `POLL_DRIVE` | `5` | Poll interval (s) while driving / idle (1–30). |

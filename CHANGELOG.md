@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] - 2026-11-17
+
+### Changed
+- **The passenger re-arm from 0.2.3 is now a setting, and it's off by default.** A front
+  passenger door opening after you got out now blocks the auto-lock for that stop, like a
+  rear door: it waits until the driver door opens and closes again. A passenger who got out
+  after you might get back in and stay, and on the reference car someone left inside
+  couldn't unlock with the inside button after an auto-lock. To get the 0.2.3 behavior back
+  (it re-arms once every door is closed), add `PASSENGER_REARM=1` with the custom-settings
+  stick. **If you're updating from 0.2.3, this changes back on its own.**
+- The same rule now covers the wait before arming: a passenger door that newly opens while
+  it's waiting (for example for the liftgate to close) cancels the exit too. A passenger
+  door that was already open when you shut the driver door (getting out together) is fine.
+- **It now tells you when it won't lock.** When a rear or passenger door cancels the
+  auto-lock, the screen shows "door opened after you got out - won't auto-lock until the
+  driver door opens and closes". Before, this was only in the log.
+
+Bench: 131/131 (9 new: the default and opt-in passenger cases, a passenger door during the
+liftgate wait, a passenger door open at the exit, a garbage setting value, the message, and
+the key-sensor case). On-car confirmation pending.
+
 ## [0.2.3] - 2026-11-17
 
 ### Fixed
@@ -256,6 +277,7 @@ battle-hardened.
   with them open, like stock. A fob shut in the frunk is still a lockout (the hood hold
   only applies while the hood is open).
 
+[0.2.4]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.2.4
 [0.2.3]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.2.3
 [0.2.2]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.2.2
 [0.1.1]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.1

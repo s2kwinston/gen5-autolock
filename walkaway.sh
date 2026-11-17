@@ -68,6 +68,10 @@ LOCK_DELAY=30          # seconds after the last door closes before locking (debo
 POST_FIRE_CONFIRM=5    # wait-and-recheck for mLockState->0 after firing (s)
 MAX_FIRES=3            # lock attempts per cycle before giving up
 DRIVER_DOOR_ONLY=1     # 1 = arm only on driver-door exit; 0 = any door
+PASSENGER_REARM=0      # front passenger door opening AFTER you got out (needs DRIVER_DOOR_ONLY=1):
+                       #   0 = no auto-lock until the driver door opens and closes again (DEFAULT:
+                       #       a passenger who gets back in is not locked in)
+                       #   1 = re-arm once every door is closed (a passenger getting out after you)
 MIN_ACC=3              # only fire while mACCStatus == this (off-standby)
 DRY_RUN=1              # 1 = log "WOULD FIRE" and send NO lock (safe default)
 ENABLED=1              # 0 = installed but inactive (stands down, never arms)
@@ -150,6 +154,7 @@ load_config() {
             POST_FIRE_CONFIRM) POST_FIRE_CONFIRM=$val ;;
             MAX_FIRES)         MAX_FIRES=$val ;;
             DRIVER_DOOR_ONLY)  DRIVER_DOOR_ONLY=$val ;;
+            PASSENGER_REARM)   PASSENGER_REARM=$val ;;
             MIN_ACC)           MIN_ACC=$val ;;
             DRY_RUN)           DRY_RUN=$val ;;
             ENABLED)           ENABLED=$val ;;
@@ -190,6 +195,7 @@ MIN_ACC=$(clampnum "$MIN_ACC" 0 5 3)
 [ "$DRY_RUN" = 0 ] || DRY_RUN=1                                  # non-0 => dry-run
 { [ "$ENABLED" = 0 ] && ENABLED=0; } || ENABLED=1
 { [ "$DRIVER_DOOR_ONLY" = 0 ] && DRIVER_DOOR_ONLY=0; } || DRIVER_DOOR_ONLY=1
+{ [ "$PASSENGER_REARM" = 1 ] && PASSENGER_REARM=1; } || PASSENGER_REARM=0   # anything but 1 => off
 { [ "$CHECK_ODEX" = 0 ] && CHECK_ODEX=0; } || CHECK_ODEX=1
 { [ "$HOOD_GUARD" = 0 ] && HOOD_GUARD=0; } || HOOD_GUARD=1
 # key-presence knobs
@@ -359,6 +365,18 @@ toast() {
     # detached am needs no watchdog.
     am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$msg" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 &
 }
+# A door opened after the driver got out: this stop's exit is cancelled (the caller resets
+# the state). Log it, and tell the driver on screen, since a silent no-lock reads as "it
+# locked". At most once per driver exit: the cancel needs EXIT_SEEN=1, which only a new
+# driver-door close sets. The toast is skipped with DRIVER_DOOR_ONLY=0, where the next door
+# close re-arms anyway.
+door_cancel() { # "a rear door" | "the passenger door"
+    say "$1 opened after you got out — won't arm until the driver door opens and closes again"
+    if [ "$DRIVER_DOOR_ONLY" = 1 ]; then
+        toast "door opened after you got out - won't auto-lock until the driver door opens and closes"
+    fi
+    return 0
+}
 
 # ---- framework hash gate ----------------------------------------------------
 # The lock transaction (bcm 5) was verified against specific framework builds. An
@@ -406,7 +424,7 @@ odex_gate() {
 ###############################################################################
 say "==== gen5-autolock starting (pid $$)"
 say "device=$(getprop ro.product.device) sw=$(getprop ro.build.product)"
-say "config: lock_delay=${LOCK_DELAY}s dry_run=$DRY_RUN enabled=$ENABLED driver_door_only=$DRIVER_DOOR_ONLY max_fires=$MAX_FIRES hood_guard=$HOOD_GUARD"
+say "config: lock_delay=${LOCK_DELAY}s dry_run=$DRY_RUN enabled=$ENABLED driver_door_only=$DRIVER_DOOR_ONLY passenger_rearm=$PASSENGER_REARM max_fires=$MAX_FIRES hood_guard=$HOOD_GUARD"
 say "key-gate: key_gate=$KEY_GATE key_gone_debounce=${KEY_GONE_DEBOUNCE}s flash_delay=${FLASH_DELAY}s key_stale=${KEY_STALE}s boot_grace=${KEY_BOOT_GRACE}s hazard_live=$HAZARD_LIVE hazard_secs=${HAZARD_SECS}s key_state=$KEY_STATE boot_id=${MY_BOOT:-none}"
 say "paths: conf=$CONF off_file=$OFF_FILE log=$LOG"
 
@@ -446,6 +464,7 @@ PREV_DRV=0
 PREV_ANY=0
 PREV_RL=0        # rear doors last poll (a rear door opening after the exit cancels it)
 PREV_RR=0
+PREV_PAS=0       # front passenger door last poll (cancels too, unless PASSENGER_REARM=1)
 FIRES=0
 DEB=0            # debounce: polls counted (fallback when the clock is unusable)
 ARM_T=""         # debounce: wall-clock second we armed / resumed at
@@ -508,7 +527,7 @@ while :; do
             say "IGN on — reset to DRIVING (was $STATE)"
         fi
         STATE=DRIVING; EXIT_SEEN=0; FIRES=0; DEB=0; LID_HOLD=0; FLASHED=0; KEY_TOASTED=0
-        PREV_DRV=$DRV; PREV_ANY=0; KEEP_EXIT_T=0; PREV_RL=$RL; PREV_RR=$RR
+        PREV_DRV=$DRV; PREV_ANY=0; KEEP_EXIT_T=0; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
         # Key-gate status while you are still IN the car (at the lock point you've already
         # walked away): one "ready" toast per boot the first time the tag is heard, and one
         # warning per drive if the sensor is down or the tag isn't heard. Warnings wait
@@ -557,7 +576,7 @@ while :; do
         say "IGN off — begin walk-away watch (acc=$ACC lock=$LOCK)"
         STATE=WAIT_EXIT
         EXIT_SEEN=0
-        PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR
+        PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
         DRIVE_WARNED=0   # next drive gets its own warning
         ;;
 
@@ -568,13 +587,19 @@ while :; do
         # between polls. The hood only matters once the exit has been seen.
         # A REAR door that opens after the exit was seen (someone may have just been put in
         # the back: rear child locks mean they can't open it from inside) cancels the exit:
-        # no arming until the driver door opens and closes again. A rear door already open
-        # when the driver door closed (people getting out together) doesn't count.
-        REAR_NEW=0
-        { { [ "$PREV_RL" = 0 ] && [ "$RL" = 1 ]; } || { [ "$PREV_RR" = 0 ] && [ "$RR" = 1 ]; }; } && REAR_NEW=1
-        PREV_RL=$RL; PREV_RR=$RR
-        if [ "$EXIT_SEEN" = 1 ] && [ "$REAR_NEW" = 1 ]; then
-            say "a rear door opened after you got out — won't arm until the driver door opens and closes again"
+        # no arming until the driver door opens and closes again. So does the front
+        # PASSENGER door unless PASSENGER_REARM=1 (someone may have got back in: on the
+        # reference car the inside unlock button doesn't work after the auto-lock). A door
+        # already open when the driver door closed (people getting out together) doesn't count.
+        DOOR_NEW=""
+        { { [ "$PREV_RL" = 0 ] && [ "$RL" = 1 ]; } || { [ "$PREV_RR" = 0 ] && [ "$RR" = 1 ]; }; } && DOOR_NEW="a rear door"
+        if [ -z "$DOOR_NEW" ] && [ "$DRIVER_DOOR_ONLY" = 1 ] && [ "$PASSENGER_REARM" != 1 ] \
+           && [ "$PREV_PAS" = 0 ] && [ "$PAS" = 1 ]; then
+            DOOR_NEW="the passenger door"
+        fi
+        PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
+        if [ "$EXIT_SEEN" = 1 ] && [ -n "$DOOR_NEW" ]; then
+            door_cancel "$DOOR_NEW"
             EXIT_SEEN=0; KEEP_EXIT_T=0; EXIT_MSG=""
         fi
         DRV_EDGE=0; [ "$PREV_DRV" = 1 ] && [ "$DRV" = 0 ] && DRV_EDGE=1
@@ -620,18 +645,24 @@ while :; do
             if [ "$RL" = 1 ] || [ "$RR" = 1 ]; then
                 # A REAR door after the driver got out: someone may have just been put in
                 # the back. Old rule: no arming until the driver door opens and closes again.
-                say "a rear door opened after you got out — won't arm until the driver door opens and closes again"
-                STATE=WAIT_EXIT; EXIT_SEEN=0; KEEP_EXIT_T=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR
+                door_cancel "a rear door"
+                STATE=WAIT_EXIT; EXIT_SEEN=0; KEEP_EXIT_T=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
+            elif [ "$DRV" = 0 ] && [ "$PASSENGER_REARM" = 1 ]; then
+                # Only the front passenger door, and the owner opted in: a passenger getting
+                # out after the driver. Re-arm as soon as every door is closed again — no new
+                # driver-door cycle needed — and keep the driver's exit as the key gate's
+                # reference.
+                say "the passenger door opened — will re-arm when all doors are closed (PASSENGER_REARM=1)"
+                STATE=WAIT_EXIT; EXIT_SEEN=1; KEEP_EXIT_T=1; WAIT_MSG=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
             elif [ "$DRV" = 0 ]; then
-                # Only the front passenger door: a passenger getting out after the driver.
-                # Re-arm as soon as every door is closed again — no new driver-door cycle
-                # needed — and keep the driver's exit as the key gate's reference.
-                say "the passenger door opened — will re-arm when all doors are closed"
-                STATE=WAIT_EXIT; EXIT_SEEN=1; KEEP_EXIT_T=1; WAIT_MSG=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR
+                # Only the front passenger door (DEFAULT): the passenger may get back in and
+                # stay, so treat it like a rear door: wait for a driver-door cycle.
+                door_cancel "the passenger door"
+                STATE=WAIT_EXIT; EXIT_SEEN=0; KEEP_EXIT_T=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
             else
                 # The driver door itself: wait for it to close again (a fresh exit).
                 say "the driver door reopened — back to WAIT_EXIT (waiting for it to close again)"
-                STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR
+                STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
             fi
         elif ! lids_closed; then
             # Liftgate or hood open but all doors closed = cargo/frunk access, not
@@ -742,7 +773,7 @@ while :; do
                             else
                                 # A refused fire only retries after a GENUINELY NEW exit.
                                 say "fire $FIRES did not lock (lock=$LOCK) — need a fresh exit before retrying"
-                                STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR
+                                STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV; PREV_RL=$RL; PREV_RR=$RR; PREV_PAS=$PAS
                             fi
                         fi
                     fi

@@ -225,16 +225,15 @@ asleep first.
   parked right against the house; parked farther out, it didn't.
 - **Standing near the car** holds the lock while it hears your key, and past the 3-minute
   window it won't lock at all.
-- **Reopening a different door after you get out** (passenger or rear, to grab something)
-  makes it wait for the driver door to open and close again. If you don't use the driver
-  door again, it won't lock that stop.
+- **Your passenger getting out after you** is fine (since 0.2.3): it starts over once every
+  door is closed and still counts from when you got out. **A rear door opening after you've
+  gotten out** means no auto-lock that stop unless the driver door opens and closes again
+  (someone may have just been put in the back). Both are bench-tested, not yet on the car.
+- **The sensor doesn't detect people.** It can still lock with someone inside; see the FAQ.
 - **Hazard flash ("key left inside"):** log-only (`HAZARD_LIVE=0`) and untested on a car.
   It also can't yet tell "key inside" from "you standing next to the car". Leave it off.
-- The "key sensor ready" message accepts a reading up to 10 s old, so unplugging the board
-  right before you start the car can still show it. The lock decision has the same 10 s
-  limit, so it can't lock on stale data.
-- The board's detailed history (`key_trace.log*` on the get-log stick) keeps only the first
-  hour after each start.
+- The board's detailed history (`key_trace.log*` on the get-log stick) keeps the last hour
+  or two of each start (since 0.2.3; before that, the first hour).
 - The board runs warm (around 70 °C on the chip after 20 minutes): normal, but give it
   airflow. **Never** power it from a battery left in a parked car. Handle the bare board by
   its edges; a case or tape over the exposed pads avoids static damage.

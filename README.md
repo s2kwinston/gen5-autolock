@@ -22,8 +22,10 @@ with the key inside.
   signal at all** (verified down to the CAN protocol, [design §8](docs/design.md#8-known-limitations)).
   The blade key lives inside the fob, so that's a real lockout. With the key sensor, it
   holds while it can hear your key in the cabin.
-- **No occupant awareness.** It can lock with a person or pet inside. The interior handle
-  still opens the door, but never rely on this with an occupant.
+- **No occupant awareness.** It can lock with a person or pet inside, with or without the
+  key sensor. On the reference car the inside unlock button didn't work after it locked,
+  the front interior handles open the door but set off the alarm, and a rear door with the
+  child lock on can't be opened from inside at all. Pause it before leaving anyone in the car.
 - **Live from the first stop.** Want to watch first? Use the test-mode installer: it logs
   `WOULD FIRE` and never locks until you switch it to LIVE.
 - **One car.** Everything was measured on a single 2022 US EV6 (see

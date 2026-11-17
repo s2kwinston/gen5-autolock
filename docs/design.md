@@ -126,11 +126,26 @@ All grounded in on-car measurement and the decompiled stock framework.
   passenger-only movement.
 - **ARMED** — debounce counting. `lock→0` → DONE (you or the car locked it; never
   double-send). `acc<3` → DEAD. A reopen is handled by *what* reopened:
-  - a **door** reopens → WAIT_EXIT, a fresh **driver**-door open→close is required before
-    it can arm again. NOTE: this is *not* occupant protection — the daemon cannot tell a
-    real exit from someone climbing back IN, so a re-entry through the driver door reads as
-    a fresh exit and it will arm (and lock) with them inside after the debounce. Pause it
-    before sitting in a switched-off car (the interior handle always opens a locked door);
+  - the **driver door** reopens → WAIT_EXIT; it arms again when the driver door closes
+    (a fresh exit);
+  - only the **front passenger door** reopens (a passenger getting out after the driver)
+    → WAIT_EXIT with the exit kept: it re-arms as soon as every door is closed again, no
+    new driver-door cycle (since 0.2.3; before that it waited for one and, if none came,
+    never locked). The debounce restarts from that close; the key gate keeps the
+    **driver's** exit as its reference, so a passenger lingering after the key has left
+    doesn't read as "the key was already silent at the exit";
+  - a **rear door** reopens → WAIT_EXIT with the exit dropped: a fresh driver-door
+    open→close is required. Door data can't tell someone getting out of the back from a
+    child or pet being put *in*, and a rear door with the child lock on can't be opened
+    from inside. The same applies in WAIT_EXIT: a rear door that *newly* opens after the
+    exit was seen cancels it (0.2.2 let one slip through while it waited for the other
+    doors); a rear door already open when the driver door closed doesn't;
+  - NOTE: none of this is occupant protection — the daemon cannot tell a real exit from
+    someone climbing back IN, so a re-entry followed by a close arms and locks with them
+    inside after the debounce (without the key sensor, or when the key is gone). On the
+    reference car the inside unlock button didn't work after this lock (it took the fob),
+    the front interior handles open the door but trip the alarm, and rear doors with the
+    child lock on can't be opened from inside. Pause it before sitting in a switched-off car;
   - the **liftgate or the hood** opens while the doors stay closed (cargo or frunk
     access, not re-entry) → **hold**: it won't lock while the lid is open and the
     debounce pauses, but the exit still counts, so it resumes the moment the lid closes —
@@ -258,9 +273,16 @@ switched off.)
   optional key sensor (§10) sidesteps the CAN entirely with its own BLE tag. (The head
   unit can't scan for the tag itself either: its Bluetooth stack is built with GATT/LE
   support off, so the listener has to be external.)
-- **Occupant left inside.** The daemon can lock with a person inside (occupancy is not
-  detectable). The interior handle always opens the door from inside, so this is not
-  entrapment, but it is startling, and opening a door after lock trips the armed alarm.
+- **Occupant left inside.** The daemon can lock with a person or pet inside (occupancy is
+  not detectable from the body data; the key sensor tracks the key, not people). On the
+  reference car a passenger left in the front seat couldn't unlock with the inside unlock
+  button after this lock (it took the fob); the front interior handles open the door but
+  trip the armed alarm, and a rear door with the child lock on can't be opened from inside
+  at all. The child-lock state itself isn't among the body signals the head unit receives
+  (not in `dumpsys`, nor anywhere in the decompiled vehicle framework; not yet tested
+  on-car). Candidate occupant signals still to test: the car's own Rear Occupant Alert
+  status (`ROA_RrStRmndAlrm`, which the head unit receives) and the passenger airbag
+  status (`mAirbagState`).
 - **Head-unit death window.** If the driver sits longer than the unit survives after
   ignition-off and then exits, the daemon is already gone and the car stays unlocked
   (same as stock — no worse). Lock manually in that case.

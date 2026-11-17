@@ -18,7 +18,7 @@ this stick, into a timestamped folder (gen5-autolock-logs/<date-time>/):
 Key sensor diagnostics (useful even without one):
   * key_state.txt        the sensor's latest status (last time the tag was heard)
   * key_trace.log*       every line the sensor board sent, this start and the 3
-                         before it (first hour of each)
+                         before it (the last hour or two of each)
   * boot_id.txt, tty.txt which head-unit start this is; the serial ports present
   * usb-diag.txt         USB devices and drivers, and which program has each
                          serial port open

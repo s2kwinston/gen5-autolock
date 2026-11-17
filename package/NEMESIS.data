@@ -6,7 +6,7 @@ id=gen5.autolock
 name=Gen5 Auto-Lock (walk-away)
 type=application,service
 types=application,service
-package-version=0.2.2
+package-version=0.2.3
 short-desc="Walk-away auto-lock: locks the car once after you get out"
 detailed-desc="Locks the doors once, LOCK_DELAY s after you switch off, get out and shut the door. Optional key-inside protection (KEY_GATE=1) needs the ESP32 BLE key sensor on the USB port; without it, keep a spare key outside the car. Verified: 2022 US EV6, fw 260507."
 ; Store compatibility: `os` is matched against ro.build.product (verified build:

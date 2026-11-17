@@ -25,8 +25,9 @@
 #     beat stale / file missing / other boot / garbled -> OFFLINE -> no lock
 #     silence OBSERVED on one feed (beat - max(seen, since)) >= debounce -> GONE
 #     otherwise -> HERE (hold). Silence the board wasn't there to hear never counts.
-#  Every line is also appended to key_trace.log (first KEY_TRACE_MAX per boot), so the
-#  real in-car gaps can be measured from the get-log stick.
+#  Every line is also appended to key_trace.log (the newest KEY_TRACE_MAX..2x lines of
+#  this boot, so a long drive keeps its END, where the stop is), so the real in-car gaps
+#  can be measured from the get-log stick.
 #
 #  WHICH tty: this head unit has BUILT-IN serial devices (ttyACM0/ttyACM1 and
 #  ttyUSB0-2 exist before any board is plugged in). The reader must never open, stty
@@ -46,7 +47,7 @@ umask 022
 KEY_TTY=${KEY_TTY:-}
 KEY_DEVDIR=${KEY_DEVDIR:-/dev}
 KEY_SYSTTY=${KEY_SYSTTY:-/sys/class/tty}
-KEY_USB_VIDS=${KEY_USB_VIDS:-239a 303a}   # Adafruit (the QT Py running key_scanner), Espressif
+KEY_USB_VIDS=${KEY_USB_VIDS:-239a 303a}   # Adafruit's id (the tested key_scanner build reports it), Espressif
 KEY_STATE=${KEY_STATE:-/data/nemesis/key_state}
 KEY_UPTIME=${KEY_UPTIME:-/proc/uptime}
 KEY_BOOTID_FILE=${KEY_BOOTID_FILE:-/proc/sys/kernel/random/boot_id}
@@ -55,8 +56,8 @@ KEY_LOG=${KEY_LOG:-/data/nemesis/gen5-autolock.log}   # shared with the daemon (
 KEY_SYSUSB=${KEY_SYSUSB:-/sys/bus/usb}
 KEY_CONF=${KEY_CONF:-/data/nemesis/gen5-autolock.conf}  # same config the daemon reads
 KEY_GAP=${KEY_GAP:-8}         # s between good lines (windows are 2.5 s) that breaks the feed
-KEY_TRACE=${KEY_TRACE:-/data/nemesis/key_trace.log}     # every line, first KEY_TRACE_MAX per boot
-KEY_TRACE_MAX=${KEY_TRACE_MAX:-1500}                    # ~1 h of windows, ~40 KB
+KEY_TRACE=${KEY_TRACE:-/data/nemesis/key_trace.log}     # every line; the newest ones are kept
+KEY_TRACE_MAX=${KEY_TRACE_MAX:-1500}                    # keep the last 1500-3000 lines: ~1-2 h, <= ~80 KB
 # KEY_ONCE (bench): make one pass over the input then exit, instead of looping.
 
 seen='-'
@@ -100,16 +101,35 @@ trap '' HUP
 rm -f "$KEY_STATE" "$KEY_STATE.tmp" 2>/dev/null
 # The trace is ROTATED, not deleted: after a test the HU sleeps, and the boot that runs the
 # get-log stick starts a new reader — the test drive's trace must still be there (.1).
-# Keeps this boot + the 3 before it (each <= KEY_TRACE_MAX lines).
+# Keeps this boot + the 3 before it (each the last ~1-2 h of its boot).
 mv "$KEY_TRACE.2" "$KEY_TRACE.3" 2>/dev/null
 mv "$KEY_TRACE.1" "$KEY_TRACE.2" 2>/dev/null
 mv "$KEY_TRACE"   "$KEY_TRACE.1" 2>/dev/null
-trace() { [ "$TRN" -lt "$KEY_TRACE_MAX" ] || return 0; echo "$*" >> "$KEY_TRACE" 2>/dev/null; TRN=$((TRN + 1)); }
+rm -f "$KEY_TRACE.tmp" 2>/dev/null
+trace() {
+    echo "$*" >> "$KEY_TRACE" 2>/dev/null; TRN=$((TRN + 1))
+    [ "$TRN" -ge $((KEY_TRACE_MAX * 2)) ] && trim_trace
+}
+# Keep only the newest KEY_TRACE_MAX lines (toolbox has no tail). Runs about once an hour
+# and takes well under KEY_STALE; the board's lines wait in the tty buffer meanwhile.
+# (trim_* names only: shell functions share globals, and the main loop uses t/ti/lastok)
+trim_trace() {
+    trim_skip=$((TRN - KEY_TRACE_MAX)); trim_n=0
+    while IFS= read -r trim_line; do
+        trim_n=$((trim_n + 1)); [ "$trim_n" -gt "$trim_skip" ] && echo "$trim_line"
+    done < "$KEY_TRACE" > "$KEY_TRACE.tmp" 2>/dev/null
+    if [ -s "$KEY_TRACE.tmp" ] && mv "$KEY_TRACE.tmp" "$KEY_TRACE" 2>/dev/null; then
+        TRN=$KEY_TRACE_MAX
+    else
+        rm -f "$KEY_TRACE.tmp" 2>/dev/null; : > "$KEY_TRACE" 2>/dev/null; TRN=0   # can't trim: start over
+    fi
+}
 
 # First-light diagnostics: can this kernel even make a /dev/ttyACM for the board?
 if [ -d "$KEY_SYSUSB/drivers/cdc_acm" ]; then ACM=present; else ACM=ABSENT; fi
 klog "starting: tty=${KEY_TTY:-auto (USB vendor $KEY_USB_VIDS)} state=$KEY_STATE boot=${boot:-none} cdc_acm-driver=$ACM"
-# USB devices the kernel sees right now, as [vendor product] (the board: [239a QT Py ESP32-S3])
+# USB devices the kernel sees right now, as [vendor product] (the tested build shows as
+# [239a QT Py ESP32-S3 ...], whatever the physical board)
 usb_products() {
     pl=""
     for d in "$KEY_SYSUSB"/devices/*; do

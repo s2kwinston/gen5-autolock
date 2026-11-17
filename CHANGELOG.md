@@ -3,6 +3,42 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-11-17
+
+### Fixed
+- **Your passenger getting out after you no longer stops the lock.** Before, any door
+  reopening made it wait for the *driver* door to open and close again; a passenger
+  getting out after you meant no lock that stop (seen on the reference car). Now, if only
+  the front passenger door reopens, it re-arms as soon as every door is closed again and
+  the countdown starts over. With the key sensor it keeps measuring from the driver's
+  exit, so a passenger who lingers after the key has left doesn't make it hold.
+- **A rear door opened after you get out always blocks the lock** until the driver door
+  opens and closes again. Door data can't tell someone getting out of the back from a
+  child or pet being put *in*, and a rear door with the child lock on can't be opened from
+  inside. (0.2.2 still let one slip through if it opened while the daemon was waiting for
+  another door to close.) A rear door already open when you shut the driver door, with
+  everyone getting out together, is fine.
+- **"key sensor ready" only appears when the board is actually connected.** It needs a
+  board line from the last 3 s; before, a reading up to 10 s old counted, so unplugging the
+  board just before starting the car could still show it.
+- **The board's history keeps the end of a long drive.** `key_trace.log` now keeps the
+  newest 1500–3000 lines of each start (the last hour or two) instead of the first 1500, so
+  the stop is always in it.
+
+### Changed
+- **Safety docs corrected.** They said the interior handle always opens a locked door. On
+  the reference car a passenger left in the front seat couldn't unlock with the inside
+  unlock button after an auto-lock (it took the fob); the front interior handles open the
+  door but trip the alarm, and a rear door with the child lock on can't be opened from
+  inside at all. The README, FAQ and design notes now say so. The head unit doesn't receive
+  the child-lock state (not in its body data or vehicle framework; not yet tested on-car).
+- Code comments no longer imply the board is an Adafruit QT Py (the tested board is a
+  Waveshare ESP32-S3 Mini flashed with the QT Py board setting). Behavior unchanged.
+
+Bench: 122/122 (13 new: the passenger re-arm, three rear-door cases, a passenger-only exit
+never arming, a door left open, the key-sensor passenger cases, the stale and fresh "ready"
+message, and the history trim). On-car confirmation pending.
+
 ## [0.2.2] - 2026-11-16
 
 The first public release of the optional **key sensor** (key-inside protection). 0.2.0
@@ -220,6 +256,7 @@ battle-hardened.
   with them open, like stock. A fob shut in the frunk is still a lockout (the hood hold
   only applies while the hood is open).
 
+[0.2.3]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.2.3
 [0.2.2]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.2.2
 [0.1.1]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.0

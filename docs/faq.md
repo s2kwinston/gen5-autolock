@@ -32,10 +32,13 @@ exercised on the bench against replayed car states (the real script, not a model
 
 ## Getting out and back in
 
-- **Someone stays in the car after I get out.** It locks with them inside. The interior
-  handle opens the door from within; doing so after the lock trips the alarm. **By
-  design**: there is no occupant signal (measured: the seat-belt sensors never reach the
-  head unit).
+- **Someone stays in the car after I get out.** It locks with them inside, with or without
+  the key sensor (the sensor tracks your key, not people). **On-car:** a passenger left in
+  the front seat couldn't unlock with the inside unlock button; it took the fob. The front
+  interior handles open the door but set off the alarm once it's armed, and a **rear door
+  with the child lock on can't be opened from inside at all**. There's no occupant signal
+  to guard with (measured: the seat-belt sensors never reach the head unit). Pause it
+  before leaving anyone in the car.
 - **I park, switch off, and just sit there.** Nothing arms: it needs a driver-door
   open→close *after* switch-off. If you sit longer than ~3 minutes after opening the door,
   the head unit has gone to sleep and there's no auto-lock: lock with the fob, same as
@@ -43,10 +46,22 @@ exercised on the bench against replayed car states (the real script, not a model
 - **I get out, then get back in.** It can't tell re-entry from a fresh exit: when you
   close the driver door it re-arms and locks with you inside after the delay (with the
   sensor: it holds, because it hears your key). **By design.** Pause it first (NEMESIS
-  Manager → My Packages → Gen5 Auto-Lock → Launch). The interior handle still opens the door.
-- **I reopen a door during the countdown to grab something.** It drops back to waiting
-  and needs the **driver** door to open and close again. If you only used the passenger or
-  rear door and then walk off, it **doesn't lock** that stop. **On-car.**
+  Manager → My Packages → Gen5 Auto-Lock → Launch).
+- **My passenger gets out after me.** The countdown starts over once every door is closed
+  again; no need to touch the driver door. With the sensor, it still counts from when *you*
+  got out, so it locks once your key is gone. **By design** (bench-tested; since 0.2.3.
+  Before that it waited for the driver door and, on-car, didn't lock that stop).
+- **A rear door opens after I've gotten out** (kids getting out after you, a bag from the
+  back seat, or putting a child or pet *in*). It **won't auto-lock that stop** unless the
+  driver door opens and closes again. From door data alone, someone getting out of the back
+  looks the same as someone being put in, and with the child lock on they couldn't open the
+  door from inside. Once everyone's out, open and shut the driver door, or lock with the
+  fob. A rear door that was already open when you shut the driver door (everyone getting
+  out together) is fine. **By design** (bench-tested; since 0.2.3).
+- **I reopen the driver door during the countdown.** It drops back to waiting and starts
+  over when the driver door closes again. **By design.**
+- **My passenger gets back in after I've walked off.** Once the doors are shut it locks with
+  them inside (see "Someone stays in the car" above). **By design.**
 - **The head unit wakes as I walk up (approach unlock).** That isn't a drive: it arms only
   after it has seen ignition on, so a boot-on-approach can never lock you in while you get
   seated. **By design.**

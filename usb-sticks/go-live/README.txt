@@ -21,6 +21,6 @@ Remove the stick after the success message. You do NOT need it again day to day.
 To go back to test mode, use the TEST MODE stick.
 
 -------------------------------------------------------------------------------
-IMPORTANT: gen5-autolock cannot tell if your key is still inside — it WILL lock
-a key in. Always keep a SPARE KEY OUTSIDE the car. Never rely on it with a
-person or pet inside.
+IMPORTANT: without the optional key sensor, gen5-autolock cannot tell if your
+key is still inside — it WILL lock a key in. Always keep a SPARE KEY OUTSIDE the
+car, sensor or not. Never rely on it with a person or pet inside.

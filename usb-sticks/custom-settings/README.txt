@@ -25,7 +25,7 @@ HOW TO CHANGE THE LOCK DELAY
  2. Change the number on the line
 
       LOCK_DELAY=30     ->  the seconds after you close the door before it locks
-                            (5 to 600; 15–30 feels natural; stay under ~120)
+                            (5 to 600; 15–30 feels natural; stay under ~90)
 
     Save the file. Keep the name exactly  gen5-autolock.conf .
  3. Put all four files back on a USB stick (at the top level of the stick).
@@ -46,9 +46,10 @@ from here by un-commenting one of the DRY_RUN lines — but the dedicated GO LIV
 
 IMPORTANT SAFETY NOTE
 ---------------------
-gen5-autolock cannot tell if your key is still inside the car — it will lock a
-key in. ALWAYS keep a spare key OUTSIDE the car (on you or at home). Never rely
-on it with a person or pet inside.
+Without the optional key sensor, gen5-autolock cannot tell if your key is still
+inside the car — it will lock a key in. Even with the sensor, ALWAYS keep a spare
+key OUTSIDE the car (on you or at home). Never rely on it with a person or pet
+inside.
 
 IF SOMETHING LOOKS WRONG
 ------------------------

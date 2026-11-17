@@ -11,11 +11,13 @@
 #  *** READ THIS BEFORE YOU RUN IT ***
 #    - KEY-INSIDE LOCKOUT RISK. The lock path used here (`bcm 5` =
 #      IBCMService.lockDoor) has NO key-inside interlock: on this car it was
-#      tested to lock and STAY locked with a key left inside. A software guard
-#      is impossible — the head unit receives no fob-presence signal at all
-#      (confirmed at the CAN-protocol layer; see docs/design.md §8). If
-#      you run this, keep a SPARE key OUTSIDE the car. Never rely on it with a
-#      person or pet inside — it has no occupant awareness.
+#      tested to lock and STAY locked with a key left inside. The head unit
+#      itself receives no fob-presence signal at all (confirmed at the
+#      CAN-protocol layer; see docs/design.md §8). The OPTIONAL key-gate
+#      (KEY_GATE=1) adds an external ESP32 that listens for a BLE tag on your
+#      key ring — see the key-presence section below. Without it, keep a SPARE
+#      key OUTSIDE the car. Never rely on it with a person or pet inside — it
+#      has no occupant awareness.
 #    - DRY_RUN=1 is the BUILT-IN default: with no config it logs "WOULD FIRE"
 #      and sends no lock. The standard installer seeds DRY_RUN=0 (live from the
 #      next stop); the test-mode installer seeds 1. The USB sticks flip it.
@@ -36,8 +38,16 @@
 #  Toolbox only — no grep/awk/busybox. Same sh idioms as the proven logger.sh.
 #
 #  SAFETY INVARIANTS (do not weaken):
-#    * Lock only. The ONLY write is `service call com.hkmc.micom.bcm 5 i32 1`
-#      (lockDoor true). There is NO unlock path and NO `i32 0` anywhere.
+#    * Writes are LOCK and (optionally) a lights-only HAZARD flash, nothing else:
+#        - lock:   `service call com.hkmc.micom.bcm 5 i32 1` (lockDoor true). NO unlock,
+#                  NO `i32 0` on tx 5, ever.
+#        - hazard: `service call com.hkmc.micom.bcm 6 i32 2` (startFindingCar mode 2 =
+#                  C_HazardFromIBOX, lights), then `6 i32 0` (stop) HAZARD_SECS later.
+#                  NEVER `6 i32 1` — that is the PANIC alarm.
+#                  Off by default (HAZARD_LIVE=0 -> dry-run) until verified on-car.
+#    * With KEY_GATE=1 the lock fires only after the key tag was heard at the exit AND
+#      then went silent for KEY_GONE_DEBOUNCE (it LEFT). Still heard, never heard,
+#      silent already at the exit, or sensor down/stale/other-boot => NO lock (fail-safe).
 #    * Fires only after a FRESH pre-check passes (IGN off, acc==3, unlocked,
 #      every door, the liftgate and the hood closed, driver-exit observed,
 #      debounce elapsed).
@@ -63,6 +73,21 @@ DRY_RUN=1              # 1 = log "WOULD FIRE" and send NO lock (safe default)
 ENABLED=1              # 0 = installed but inactive (stands down, never arms)
 CHECK_ODEX=1           # 1 = refuse to run if the framework hash changed
 HOOD_GUARD=1           # 1 = also hold while the hood/frunk is open (read from logcat)
+# ---- key-presence (ESP32 sensor via key-reader.sh); see docs/key-sensor.md ----
+KEY_GATE=0             # 0 = legacy blind lock (DEFAULT, unchanged behavior). 1 = require the
+                       #     key to have LEFT the cabin before locking (the key-inside safety fix).
+KEY_GONE_DEBOUNCE=20   # s of continuous silence that means the key has left (worst in-car gap seen: 7.5 s)
+FLASH_DELAY=60         # s the key must STILL be heard after exit before the "left inside" flash
+KEY_STALE=10           # reader beat older than this = board/reader down = OFFLINE (fail-safe)
+KEY_BOOT_GRACE=60      # s after start before a missing/silent sensor is worth a warning toast
+KEY_READY_TOAST=1      # 1 = one "key sensor ready" toast per boot when the tag is first heard
+KEY_HOLD_MAX=180       # s after the exit to keep waiting for the key to leave; then give up for
+                       #     this stop (the head unit is usually asleep by then: ~3 min after the
+                       #     driver door opens)
+KEY_FLASH_FRESH=12     # (fixed) the "left inside" flash needs the tag heard within this many s
+                       #     (worst in-cabin gap measured 8.3 s); not a config knob
+HAZARD_LIVE=0          # 0 = hazard flash is DRY-RUN (log only). Untested on a car: leave 0
+HAZARD_SECS=3          # s between hazard start and stop (~2-3 blinks), 1-15
 
 # ---- paths ----
 # Default under /data/nemesis, which SURVIVES reboot. NOT /data/local/tmp — NEMESIS
@@ -71,6 +96,8 @@ SELF=${0%/*}
 NEMESIS_DIR=/data/nemesis
 LOG=${GEN5_LOG:-${WALKAWAY_LOG:-$NEMESIS_DIR/gen5-autolock.log}}
 OFF_FILE=${GEN5_OFF:-$NEMESIS_DIR/gen5-autolock.off}   # pause flag; survives reboot
+KEY_STATE=${GEN5_KEY_STATE:-$NEMESIS_DIR/key_state}    # written by key-reader.sh (presence feed)
+BOOT_ID_FILE=${GEN5_BOOT_ID:-/proc/sys/kernel/random/boot_id}  # key_state uptimes are per-boot
 # prefer a persistent ref dir that survives package updates; else ./ref (standalone)
 if [ -n "$GEN5_REF" ]; then REF=$GEN5_REF
 elif [ -n "$WALKAWAY_REF" ]; then REF=$WALKAWAY_REF
@@ -125,6 +152,15 @@ load_config() {
             ENABLED)           ENABLED=$val ;;
             CHECK_ODEX)        CHECK_ODEX=$val ;;
             HOOD_GUARD)        HOOD_GUARD=$val ;;
+            KEY_GATE)          KEY_GATE=$val ;;
+            KEY_GONE_DEBOUNCE) KEY_GONE_DEBOUNCE=$val ;;
+            FLASH_DELAY)       FLASH_DELAY=$val ;;
+            KEY_STALE)         KEY_STALE=$val ;;
+            KEY_BOOT_GRACE)    KEY_BOOT_GRACE=$val ;;
+            KEY_READY_TOAST)   KEY_READY_TOAST=$val ;;
+            KEY_HOLD_MAX)      KEY_HOLD_MAX=$val ;;
+            HAZARD_LIVE)       HAZARD_LIVE=$val ;;
+            HAZARD_SECS)       HAZARD_SECS=$val ;;
             *) say "config: ignoring unknown key '$key'" ;;
         esac
     done < "$CONF"
@@ -153,6 +189,16 @@ MIN_ACC=$(clampnum "$MIN_ACC" 0 5 3)
 { [ "$DRIVER_DOOR_ONLY" = 0 ] && DRIVER_DOOR_ONLY=0; } || DRIVER_DOOR_ONLY=1
 { [ "$CHECK_ODEX" = 0 ] && CHECK_ODEX=0; } || CHECK_ODEX=1
 { [ "$HOOD_GUARD" = 0 ] && HOOD_GUARD=0; } || HOOD_GUARD=1
+# key-presence knobs
+KEY_GONE_DEBOUNCE=$(clampnum "$KEY_GONE_DEBOUNCE" 10 600 20)
+FLASH_DELAY=$(clampnum "$FLASH_DELAY" 10 600 60)
+KEY_STALE=$(clampnum "$KEY_STALE" 3 120 10)
+KEY_BOOT_GRACE=$(clampnum "$KEY_BOOT_GRACE" 10 600 60)
+HAZARD_SECS=$(clampnum "$HAZARD_SECS" 1 15 3)
+KEY_HOLD_MAX=$(clampnum "$KEY_HOLD_MAX" 60 1800 180)
+{ [ "$KEY_GATE" = 1 ] && KEY_GATE=1; } || KEY_GATE=0            # OFF unless explicitly 1
+{ [ "$HAZARD_LIVE" = 1 ] && HAZARD_LIVE=1; } || HAZARD_LIVE=0   # dry-run unless explicitly 1
+{ [ "$KEY_READY_TOAST" = 0 ] && KEY_READY_TOAST=0; } || KEY_READY_TOAST=1
 
 # ---- parsed BCM cache globals ----
 IGN1="" IGN2="" ACC="" LOCK="" DRV="" PAS="" RL="" RR="" TRUNK="" STOLE="" PANIC=""
@@ -229,9 +275,86 @@ precheck_ok() {
 }
 
 fire_lock() {
-    # THE ONLY WRITE IN THIS DAEMON.  i32 1 == lockDoor(true).  Never i32 0.
+    # THE PRIMARY WRITE.  i32 1 == lockDoor(true).  Never i32 0 on tx 5.
     say "FIRE attempt $1/$MAX_FIRES: lockDoor(true)  [stole=$STOLE panic=$PANIC acc=$ACC]"
     service call com.hkmc.micom.bcm 5 i32 1 >> "$LOG" 2>&1
+}
+
+# ---- key-presence (ESP32 sensor via key-reader.sh -> $KEY_STATE) -------------
+KEY_SEEN="" KEY_BEAT="" KEY_RSSI="" KEY_BOOT=""
+MY_BOOT=""; read MY_BOOT < "$BOOT_ID_FILE" 2>/dev/null   # "" if this kernel has no boot_id
+read_key_state() {
+    KEY_SEEN=""; KEY_BEAT=""; KEY_RSSI=""; KEY_BOOT=""; KEY_SINCE=""
+    [ -f "$KEY_STATE" ] || return 0
+    while read -r kl || [ -n "$kl" ]; do
+        case "$kl" in
+            seen_uptime=*) KEY_SEEN=${kl#seen_uptime=} ;;
+            rssi=*)        KEY_RSSI=${kl#rssi=} ;;
+            beat=*)        KEY_BEAT=${kl#beat=} ;;
+            since=*)       KEY_SINCE=${kl#since=} ;;
+            boot=*)        KEY_BOOT=${kl#boot=} ;;
+        esac
+    done < "$KEY_STATE"
+}
+# Classify the sensor feed (call read_key_state first). Sets KEY_P to exactly one of:
+#   OFFLINE  no clock / no file / beat stale, garbled or AHEAD of the clock / file from
+#            another boot / no feed start -> board or reader down: can't know -> never lock
+#   NOTAG    board alive but the tag has never been heard this boot (dead tag battery?)
+#   GONE     the board OBSERVED KEY_GONE_DEBOUNCE s of silence on one continuous feed:
+#            beat - max(last sighting, feed start) >= debounce. Measured up to the last
+#            beat, NOT up to now: a board that died or dropped off USB can never "observe"
+#            silence (its beat freezes), and silence from before a reconnect never counts.
+#   HERE     anything else with a live feed (heard recently, or not yet enough observed
+#            silence) -> hold
+# Also sets KEY_SI (integer uptime of the last sighting) for the exit check and KEY_AGE
+# (s since the last sighting) for the flash. Globals, not echo: no subshell swallows them.
+key_presence() {
+    KEY_P=OFFLINE; KEY_SI=""; KEY_AGE=""
+    nb=$(now_s)
+    [ -n "$nb" ] || return 0
+    [ -n "$MY_BOOT" ] && [ "$KEY_BOOT" != "$MY_BOOT" ] && return 0     # another boot's file
+    bi=${KEY_BEAT%%.*}
+    case "$bi" in ''|*[!0-9]*) return 0 ;; esac
+    [ $((nb - bi)) -lt 0 ] && return 0                                  # beat from the future
+    [ $((nb - bi)) -gt "$KEY_STALE" ] && return 0                       # reader stale/dead
+    fs=${KEY_SINCE%%.*}
+    case "$fs" in ''|*[!0-9]*) return 0 ;; esac                        # no feed start: garbled
+    [ "$fs" -gt "$bi" ] && return 0
+    case "$KEY_SEEN" in ''|-) KEY_P=NOTAG; return 0 ;; esac            # alive, never heard
+    si=${KEY_SEEN%%.*}
+    case "$si" in ''|*[!0-9]*) return 0 ;; esac
+    [ "$si" -gt "$bi" ] && return 0                                     # sighting after the beat
+    KEY_SI=$si; KEY_AGE=$((nb - si))
+    from=$si; [ "$fs" -gt "$from" ] && from=$fs                       # observed silence starts here
+    if [ $((bi - from)) -ge "$KEY_GONE_DEBOUNCE" ]; then KEY_P=GONE; else KEY_P=HERE; fi
+    return 0
+}
+# Lights-only hazard flash (NOT the panic alarm): start, wait HAZARD_SECS, stop.
+# startFindingCar(2) = C_HazardFromIBOX (lights); mode 0 = stop (the vendor's own
+# stopFindingCar() is startFindingCar(0)); mode 1 = PANIC — NEVER sent.
+# DRY-RUN until HAZARD_LIVE=1 (untested on a car; see docs/key-sensor.md).
+fire_hazard() {
+    if [ "$HAZARD_LIVE" = 1 ]; then
+        say "FLASH: key left in cabin — hazard lights ${HAZARD_SECS}s (startFindingCar 2, then 0)  [stole=$STOLE]"
+        service call com.hkmc.micom.bcm 6 i32 2 >> "$LOG" 2>&1
+        sleep "$HAZARD_SECS"
+        service call com.hkmc.micom.bcm 6 i32 0 >> "$LOG" 2>&1
+    else
+        say "WOULD FLASH (HAZARD_LIVE!=1): key left in cabin — hazard lights (startFindingCar 2, then 0)"
+    fi
+}
+# Transient on-screen message via the vendor HMI toast (am broadcast) — the same path
+# NEMESIS uses from an sh service. Backgrounded, boot-gated. Every caller passes a fixed
+# literal message, and "$msg" reaches am as one quoted argument (no shell re-parse), so
+# no sanitizer is needed (an earlier bracket-pattern one was a mksh-parsing risk).
+framework_up() { [ "$(getprop sys.boot_completed)" = 1 ]; }
+toast() {
+    msg=$1; [ -n "$msg" ] || return 0
+    framework_up || return 0
+    # Backgrounded so a wedged Activity Manager can never stall the lock loop; the
+    # message is occasional (once per cycle) and the HU reboots each drive, so a
+    # detached am needs no watchdog.
+    am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$msg" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 &
 }
 
 # ---- framework hash gate ----------------------------------------------------
@@ -281,9 +404,25 @@ odex_gate() {
 say "==== gen5-autolock starting (pid $$)"
 say "device=$(getprop ro.product.device) sw=$(getprop ro.build.product)"
 say "config: lock_delay=${LOCK_DELAY}s dry_run=$DRY_RUN enabled=$ENABLED driver_door_only=$DRIVER_DOOR_ONLY max_fires=$MAX_FIRES hood_guard=$HOOD_GUARD"
+say "key-gate: key_gate=$KEY_GATE key_gone_debounce=${KEY_GONE_DEBOUNCE}s flash_delay=${FLASH_DELAY}s key_stale=${KEY_STALE}s boot_grace=${KEY_BOOT_GRACE}s hazard_live=$HAZARD_LIVE hazard_secs=${HAZARD_SECS}s key_state=$KEY_STATE boot_id=${MY_BOOT:-none}"
 say "paths: conf=$CONF off_file=$OFF_FILE log=$LOG"
 
 odex_gate || exit 1
+
+# Key-gate: start the key sensor reader (key-reader.sh, beside this script). It is not
+# a NEMESIS service of its own; it holds a single-instance lock, so a daemon restart
+# (settings stick, Manager Start) just finds the running one and leaves it be. It only
+# READS the ESP32 on the USB port — it never talks to the car.
+if [ "$KEY_GATE" = 1 ]; then
+    KR_STARTED=0
+    for kr in "$GEN5_KEY_READER" "$SELF/key-reader.sh" "$NEMESIS_DIR/apps/gen5.autolock/key-reader.sh"; do
+        [ -n "$kr" ] && [ -f "$kr" ] || continue
+        sh "$kr" </dev/null >/dev/null 2>&1 &
+        say "key-gate: started the key sensor reader ($kr, pid $!)"
+        KR_STARTED=1; break
+    done
+    [ "$KR_STARTED" = 1 ] || say "key-gate: WARNING key-reader.sh not found — the sensor will read OFFLINE, so it will NOT auto-lock"
+fi
 
 # wait for Android. A cold boot on this HU can exceed a minute; giving up would
 # silently cost a whole drive, so keep waiting (logging) rather than exit, and
@@ -310,6 +449,12 @@ EXIT_MSG=""      # pending "exit seen" line (logged once the hood has been read)
 WAIT_MSG=0       # "lid open at exit — waiting" logged once per exit
 PAUSED=0         # paused by the ENABLED knob / off-file toggle
 ALIVE=0          # have we seen a live ACC yet? (a cold-boot cache can read 0/1)
+FLASHED=0        # key-gate: fired the "key left inside" flash this cycle?
+KEY_TOASTED=0    # key-gate: shown a "not auto-locking" toast this cycle?
+DRIVE_WARNED=0   # key-gate: shown a "sensor/tag problem" toast this drive?
+READY_SAID=0     # key-gate: announced "sensor ready" this boot?
+EXIT_T=""        # key-gate: uptime of the exit that armed this cycle
+LOOP_T=$(now_s)  # key-gate: uptime the main loop started (warning grace period)
 
 say "entering main loop (STATE=$STATE)"
 
@@ -356,8 +501,34 @@ while :; do
         if [ "$STATE" != DRIVING ]; then
             say "IGN on — reset to DRIVING (was $STATE)"
         fi
-        STATE=DRIVING; EXIT_SEEN=0; FIRES=0; DEB=0; LID_HOLD=0
+        STATE=DRIVING; EXIT_SEEN=0; FIRES=0; DEB=0; LID_HOLD=0; FLASHED=0; KEY_TOASTED=0
         PREV_DRV=$DRV; PREV_ANY=0
+        # Key-gate status while you are still IN the car (at the lock point you've already
+        # walked away): one "ready" toast per boot the first time the tag is heard, and one
+        # warning per drive if the sensor is down or the tag isn't heard. Warnings wait
+        # KEY_BOOT_GRACE after start (the board and reader need time to come up).
+        if [ "$KEY_GATE" = 1 ]; then
+            read_key_state; key_presence
+            if [ "$KEY_P" = HERE ]; then
+                if [ "$READY_SAID" != 1 ]; then
+                    say "key-gate: sensor ready — key tag heard (rssi $KEY_RSSI)"
+                    [ "$KEY_READY_TOAST" = 1 ] && toast "key sensor ready - key tag detected"
+                    READY_SAID=1
+                fi
+            elif [ "$DRIVE_WARNED" != 1 ]; then
+                NOWK=$(now_s)
+                if [ -n "$NOWK" ] && [ -n "$LOOP_T" ] && [ $((NOWK - LOOP_T)) -ge "$KEY_BOOT_GRACE" ]; then
+                    case "$KEY_P" in
+                        OFFLINE)
+                            say "key-gate: sensor OFFLINE while driving — auto-lock will NOT fire this stop  [seen=$KEY_SEEN beat=$KEY_BEAT boot=$KEY_BOOT]"
+                            toast "key sensor offline - auto-lock will not fire"; DRIVE_WARNED=1 ;;
+                        NOTAG|GONE)
+                            say "key-gate: key tag NOT heard while driving ($KEY_P) — auto-lock will NOT fire unless it is heard at exit  [seen=$KEY_SEEN]"
+                            toast "key tag not detected - auto-lock will not fire"; DRIVE_WARNED=1 ;;
+                    esac
+                fi
+            fi
+        fi
         sleep "$POLL_DRIVE"
         continue
     fi
@@ -377,6 +548,7 @@ while :; do
         STATE=WAIT_EXIT
         EXIT_SEEN=0
         PREV_DRV=$DRV
+        DRIVE_WARNED=0   # next drive gets its own warning
         ;;
 
     WAIT_EXIT)
@@ -397,7 +569,7 @@ while :; do
             read_hood       # exit seen: now the lids matter (a slow poll is fine here)
             [ -n "$EXIT_MSG" ] && { say "exit seen ($EXIT_MSG)  [drv=$DRV pas=$PAS rl=$RL rr=$RR trunk=$TRUNK hood=${HOOD:-?}]"; EXIT_MSG=""; }
             if [ "$ACC" = "$MIN_ACC" ] && [ "$LOCK" = 1 ] && all_closed; then
-                STATE=ARMED; DEB=0; LID_HOLD=0; ARM_T=$(now_s)
+                STATE=ARMED; DEB=0; LID_HOLD=0; ARM_T=$(now_s); EXIT_T=$ARM_T; FLASHED=0; KEY_TOASTED=0
                 say "ARMED — debounce ${LOCK_DELAY}s (acc=$ACC lock=$LOCK trunk=$TRUNK hood=${HOOD:-?} doors=$DRV$PAS$RL$RR)"
             elif [ "$WAIT_MSG" != 1 ] && ! lids_closed; then
                 LID=hood; [ "$TRUNK" != 0 ] && LID=trunk/liftgate
@@ -454,31 +626,87 @@ while :; do
                 read_hood; read_bcm
                 [ "$HOOD_GUARD" = 1 ] && [ -z "$HOOD" ] && say "note: hood state unknown (no door event in the log yet) — treated as closed"
                 if precheck_ok; then
-                    FIRES=$((FIRES + 1))
-                    if [ "$DRY_RUN" = 1 ]; then
-                        say "WOULD FIRE $FIRES/$MAX_FIRES (DRY_RUN=1): lockDoor(true) — NO write sent  [acc=$ACC lock=$LOCK stole=$STOLE]"
-                        STATE=DONE
-                    else
-                        fire_lock "$FIRES"
-                        sleep "$POST_FIRE_CONFIRM"
-                        read_bcm
-                        if [ "$LOCK" = 0 ]; then
-                            say "confirmed locked (lock=0, stole=$STOLE). STATE=DONE"
+                    # ---- KEY-GATE: lock ONLY once the key has actually LEFT the cabin ----
+                    # (KEY_GATE=0 -> this whole block is skipped, legacy blind-lock behavior.)
+                    DO_LOCK=1
+                    if [ "$KEY_GATE" = 1 ]; then
+                        read_key_state; key_presence
+                        KMSG=""
+                        case "$KEY_P" in
+                            GONE)
+                                # Silence only means "it left" if the tag was heard AT the exit
+                                # (within one debounce window of it). A tag already silent when
+                                # you got out (dead battery, key not on you) proves nothing.
+                                if [ -n "$EXIT_T" ] && [ "$KEY_SI" -ge $((EXIT_T - KEY_GONE_DEBOUNCE)) ]; then
+                                    : # heard at exit, now gone -> the key LEFT -> proceed to lock
+                                else
+                                    DO_LOCK=0
+                                    KMSG="key tag not heard at exit - not auto-locking"
+                                    KLOG="key tag was already silent at the exit (last heard uptime $KEY_SI, exit $EXIT_T) — NOT locking (can't tell it left)"
+                                fi
+                                ;;
+                            HERE)
+                                DO_LOCK=0   # heard recently / not enough observed silence: hold
+                                # Flash only for a key heard JUST NOW (within KEY_FLASH_FRESH):
+                                # HERE also covers "heard 40 s ago, owner walking off" — that
+                                # must not flash "key left inside" a few seconds before it locks.
+                                if [ "$FLASHED" != 1 ] && [ "$WAITED" -ge "$FLASH_DELAY" ] &&
+                                   [ -n "$KEY_AGE" ] && [ "$KEY_AGE" -le "$KEY_FLASH_FRESH" ]; then
+                                    say "key STILL in the cabin after ${WAITED}s (heard ${KEY_AGE}s ago) — NOT locking (key-inside hold)"
+                                    fire_hazard; FLASHED=1
+                                fi
+                                ;;
+                            NOTAG)
+                                DO_LOCK=0
+                                KMSG="key tag not detected - not auto-locking"
+                                KLOG="sensor alive but the key tag was never heard this boot — NOT locking (fail-safe)"
+                                ;;
+                            *)
+                                DO_LOCK=0   # OFFLINE (board/reader down): can't confirm -> fail safe
+                                KMSG="key sensor offline - not auto-locking"
+                                KLOG="key sensor OFFLINE — NOT locking (fail-safe)  [seen=$KEY_SEEN beat=$KEY_BEAT boot=$KEY_BOOT]"
+                                ;;
+                        esac
+                        if [ -n "$KMSG" ] && [ "$KEY_TOASTED" != 1 ]; then
+                            say "$KLOG"; toast "$KMSG"; KEY_TOASTED=1
+                        fi
+                        # The hold is non-terminal (a key that leaves later still locks), but
+                        # bounded: past KEY_HOLD_MAX after the exit, give up for this stop. A
+                        # car kept awake for ages (charging, utility mode) must not get a
+                        # late, rare RF gap's worth of "silence" to lock on.
+                        if [ "$DO_LOCK" = 0 ] && [ -n "$EXIT_T" ] && [ -n "$NOW" ] &&
+                           [ $((NOW - EXIT_T)) -ge "$KEY_HOLD_MAX" ]; then
+                            say "key hold expired after $((NOW - EXIT_T))s (key-gate: $KEY_P) — NOT locking this stop. STATE=DONE"
                             STATE=DONE
-                        elif [ "$FIRES" -ge "$MAX_FIRES" ]; then
-                            say "WARN: $FIRES fires, still unlocked (lock=$LOCK). Lock not taking —"
-                            say "      cause unknown. NOTE: this path has NO key-inside interlock"
-                            say "      (tested), so a refusal is NOT evidence of a key inside."
-                            say "      Leaving UNLOCKED. STATE=GAVE_UP"
-                            STATE=GAVE_UP
-                        else
-                            # A refused fire only retries after a GENUINELY NEW exit.
-                            # (Re-arming on a timer would re-fire at a driver who just
-                            # climbed back in and closed his own door.)
-                            say "fire $FIRES did not lock (lock=$LOCK) — need a fresh exit before retrying"
-                            STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV
                         fi
                     fi
+                    if [ "$DO_LOCK" = 1 ]; then
+                        FIRES=$((FIRES + 1))
+                        if [ "$DRY_RUN" = 1 ]; then
+                            say "WOULD FIRE $FIRES/$MAX_FIRES (DRY_RUN=1): lockDoor(true) — NO write sent  [acc=$ACC lock=$LOCK stole=$STOLE]"
+                            STATE=DONE
+                        else
+                            fire_lock "$FIRES"
+                            sleep "$POST_FIRE_CONFIRM"
+                            read_bcm
+                            if [ "$LOCK" = 0 ]; then
+                                say "confirmed locked (lock=0, stole=$STOLE). STATE=DONE"
+                                STATE=DONE
+                            elif [ "$FIRES" -ge "$MAX_FIRES" ]; then
+                                say "WARN: $FIRES fires, still unlocked (lock=$LOCK). Lock not taking —"
+                                say "      cause unknown. NOTE: this lock path has NO key-inside interlock"
+                                say "      (tested), so a refusal is NOT evidence of a key inside."
+                                say "      Leaving UNLOCKED. STATE=GAVE_UP"
+                                STATE=GAVE_UP
+                            else
+                                # A refused fire only retries after a GENUINELY NEW exit.
+                                say "fire $FIRES did not lock (lock=$LOCK) — need a fresh exit before retrying"
+                                STATE=WAIT_EXIT; EXIT_SEEN=0; DEB=0; LID_HOLD=0; PREV_DRV=$DRV
+                            fi
+                        fi
+                    fi
+                    # DO_LOCK=0 (key held): stay ARMED and re-check every poll until
+                    # KEY_HOLD_MAX — once the board has observed the debounce of silence, we lock.
                 else
                     say "final pre-check failed at fire time — re-arming"
                     DEB=0; ARM_T=$(now_s)

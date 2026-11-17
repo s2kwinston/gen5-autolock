@@ -15,6 +15,22 @@ this stick, into a timestamped folder (gen5-autolock-logs/<date-time>/):
                          state (a cache read — it sends nothing to the car)
   * service-log/         the service's own output, if present
 
+Key sensor diagnostics (useful even without one):
+  * key_state.txt        the sensor's latest status (last time the tag was heard)
+  * key_trace.log*       every line the sensor board sent, this start and the 3
+                         before it (first hour of each)
+  * boot_id.txt, tty.txt which head-unit start this is; the serial ports present
+  * usb-diag.txt         USB devices and drivers, and which program has each
+                         serial port open
+  * dmesg.txt            the head unit's kernel log
+  * logcat.txt           the head unit's full system log (a few MB)
+
+PRIVACY: dmesg.txt and especially logcat.txt are the head unit's own logs. They
+can contain things like your phone's name, Wi-Fi network names, navigation or
+location lines, and the car's VIN. Read them (or delete them) before you post
+or send this folder to anyone. gen5-autolock.log and key_trace.log are usually
+all that's needed to ask for help.
+
 After the success message, remove the stick and open that folder on a computer.
 
 -------------------------------------------------------------------------------
@@ -22,4 +38,4 @@ TIP — check the liftgate (or a door): BEFORE you insert this stick, OPEN the
 rear liftgate (or a door). Then bcm-snapshot.txt will show it, e.g.
 "mTrunkOpenedState: 1" for the liftgate or "mDrvOpenedState: 1" for the driver
 door. That's how you confirm the car actually reports the liftgate to the head
-unit (see the "Test (dry-run first)" section of the project README).
+unit (see "Optional: test mode first" in the project's docs/install.md).

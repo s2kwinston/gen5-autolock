@@ -5,7 +5,8 @@
 **Platform:** [NEMESIS](https://github.com/xwtk/hmg_nemesis) root on the head unit,
 `isSupportMMCAN = 1` (MMCAN lock path).
 **Status:** Reference implementation, field-verified. The standard installer goes live on install (a test-mode installer and a built-in `DRY_RUN=1` default exist); see the safety notes below and
-in the [README](../README.md).
+in the [README](../README.md). The optional key sensor (§10) adds key-inside protection
+with external hardware; field-tested on the same car.
 
 ---
 
@@ -21,6 +22,8 @@ in the [README](../README.md).
    possible: the head unit receives **no fob-presence signal at all**, confirmed at the
    CAN-protocol layer (§8). Deploying is a **risk-acceptance decision**, not a safety
    guarantee. In normal use — you walk away *with* the key — the feature is unaffected.
+   The optional **key sensor** (§10) closes this gap from outside the head unit: a BLE
+   tag on the key ring and an ESP32 listener on the USB port.
 2. **Persistence is handled by the package.** Running every drive means something must
    start the daemon at each boot; the NEMESIS package registers it as a service that
    NEMESIS starts at boot — **no `/system`/init change of your own** (see §7).
@@ -49,7 +52,7 @@ All grounded in on-car measurement and the decompiled stock framework.
 | F1 | Turning the car off auto-unlocks the doors (`mLockState` 0→1 the moment `mIgnition1`→false). |
 | F2 | The exit is visible: the driver door goes open→closed in the body-control cache. |
 | F3 | After ignition off, `mACCStatus` steps 5 → 4 (transitioning, ~6–18 s) → 3 (off-standby) → 1 → 0 (dead). The cache is live and correct throughout `acc==3`. |
-| F4 | **Measured unlocked** (field-map run, 2026-11-01): ignition off at T+0; driver door opened at +13 s (`mACCStatus` stepped 4→3 on that door event, not on a timer), closed at +17 s; `acc` 3→1 at +195 s, 1→0 at +201 s, last cache read at +205 s. So the lockable window (`acc==3`) after the door closed was **178 s**. Runs that locked early died ~187–200 s after ignition off. |
+| F4 | **Measured unlocked** (field-map run, 2026-11-01): ignition off at T+0; driver door opened at +13 s (`mACCStatus` stepped 4→3 on that door event, not on a timer), closed at +17 s; `acc` 3→1 at +195 s, 1→0 at +201 s, last cache read at +205 s. So the lockable window (`acc==3`) after the door closed was **178 s**. Runs that locked early died ~187–200 s after ignition off. **Field update (2026-11-16, 41 logged stops):** the unit never powered down sooner than 180 s after ignition off, usually 180–200 s. The window is best read as **~3 min from the driver door first opening** (the 4→3 step): on one stop the door stayed open ~3 min while unloading, closed at +182 s, and the unit was gone at +233 s — only 51 s after the close. A lock sent 6 s before power-down did **not** take (`lock` stayed 1). |
 | F5 | `lockDoor(true)` = `service call com.hkmc.micom.bcm 5 i32 1`. In `IBCMService$Stub` the `onTransact` case `0x5` does `enforceInterface` → `readInt()` → non-zero ⇒ `lockDoor(true)`. No permission/ACL check, no software safety check. |
 | F6 | The MMCAN lock is a clean momentary pulse that self-releases: `C_PreCrankReq=1` now → (+1000 ms) relay `C_CtrlDrLockRlyIBOX=1` → (+500 ms) relay=0. Identical to the OEM / remote-services lock. No stuck relay. |
 | F7 | `dumpsys com.hkmc.micom.bcm` prints the live cache with labels and sends **no** CAN. Door/lock/ignition/acc are all readable from it. |
@@ -183,16 +186,18 @@ and we only fire at `acc==3`).
 |---|---|---|
 | `POLL_DRIVE` | 5 s | Poll interval while ignition is on / idle. Nothing time-critical. |
 | `POLL_ACTIVE` | 1 s | Poll interval after ignition off. 1 s (not 3 s) because a quick exit — a driver door open for only a few seconds — can fall between slower polls and never arm. One `dumpsys` costs ~9 ms (F12). The hood read (`logcat -d`) is **not** cheap on this HU — polls that include it ran 2–5 s apart on-car (2026-11-02) — so it runs only once the exit has been seen (WAIT_EXIT after the door edge, and ARMED). Pre-exit polls stay ~1 s; the fire can land up to ~5 s after `LOCK_DELAY` (wall-clock), which is harmless. |
-| `LOCK_DELAY` | 30 s | Debounce after the last door closes, counted in **real seconds from the monotonic `/proc/uptime`** (F12; immune to the wall clock being set after boot — the HU starts at a 2015 default and syncs later; falls back to counting polls if uptime is unreadable), so a slow poll can't stretch it and a clock sync can't skip it. Long enough that reopening to grab something doesn't lock you out; short enough to stay well inside the measured 178 s window (F4) — keep it ≤ ~120 s. |
+| `LOCK_DELAY` | 30 s | Debounce after the last door closes, counted in **real seconds from the monotonic `/proc/uptime`** (F12; immune to the wall clock being set after boot — the HU starts at a 2015 default and syncs later; falls back to counting polls if uptime is unreadable), so a slow poll can't stretch it and a clock sync can't skip it. Long enough that reopening to grab something doesn't lock you out; short enough to stay well inside the ~3 min window (F4) — keep it ≤ ~90 s, since a door held open while unloading shrinks the time left after it closes. |
 | `POST_FIRE_CONFIRM` | 5 s | Wait-and-recheck for `mLockState→0`. The MMCAN pulse completes in ~1.5 s (F6), so 5 s is comfortable. |
 | `MAX_FIRES` | 3 | Cap on lock attempts per stop. Prevents hammering a module that is not locking. |
 
 **Margin:** typical fire time ≈ ignition-off + exit (~17 s measured) + `LOCK_DELAY`
 (30 s) ≈ 50 s. Measured unlocked, the cache stayed at `acc==3` for 178 s after the door
 closed and the unit was gone at +205 s after ignition-off (F4), leaving ≈ 2 min of margin
-at the default. After the daemon locks, the unit shuts down ~170 s later — expected and
-fine; the job is done. `LOCK_DELAY` above ~120 s eats into the measured window; beyond
-it would need `requestPwrKeepStart` (power service transaction 22) — out of scope.
+at the default — for a prompt exit. The window runs from the driver door *opening* (F4),
+so time spent unloading with the door open comes out of that margin. After the daemon
+locks, the unit shuts down ~2 min later — expected and fine; the job is done. Keeping
+the unit awake longer would need `requestPwrKeepStart` (power service transaction 22), a
+vehicle write — out of scope.
 
 ---
 
@@ -229,9 +234,10 @@ switched off.)
 
 ## 8. Known limitations
 
-- **No fob-proximity signal.** This is time-based (debounce), not distance-based like
-  the OEM feature. It cannot know the driver actually walked *away* vs. stepped out and
-  stood by the car.
+- **No fob-proximity signal.** Without the key sensor this is time-based (debounce), not
+  distance-based like the OEM feature. It cannot know the driver actually walked *away*
+  vs. stepped out and stood by the car. The key sensor (§10) adds presence/absence of a
+  BLE tag, not the car's own fob ranging.
 - **Key left inside = confirmed lockout risk.** This lock path has no anti-lockout: the
   car locks and stays locked with a key inside (§0). The mechanical blade lives in the
   fob, so recovery needs a **spare kept outside the car**. In normal use the driver
@@ -248,7 +254,10 @@ switched off.)
   ECU from data the smart-key module keeps to itself. Approach-unlock works because the
   smart-key module actuates the locks and we see the *result* (doors unlock); we never
   see the fob-ranging *input*. Reading fob-inside would require tapping the smart-key ↔
-  cluster CAN directly with external hardware — out of scope for a head-unit daemon.
+  cluster CAN directly with external hardware — out of scope for a head-unit daemon. The
+  optional key sensor (§10) sidesteps the CAN entirely with its own BLE tag. (The head
+  unit can't scan for the tag itself either: its Bluetooth stack is built with GATT/LE
+  support off, so the listener has to be external.)
 - **Occupant left inside.** The daemon can lock with a person inside (occupancy is not
   detectable). The interior handle always opens the door from inside, so this is not
   entrapment, but it is startling, and opening a door after lock trips the armed alarm.
@@ -299,9 +308,62 @@ All knobs live at the top of [`walkaway.sh`](../walkaway.sh) (override in the co
 POLL_DRIVE=5      POLL_ACTIVE=1       LOCK_DELAY=30    POST_FIRE_CONFIRM=5
 MAX_FIRES=3       DRIVER_DOOR_ONLY=1  MIN_ACC=3        DRY_RUN=1
 ENABLED=1         CHECK_ODEX=1        HOOD_GUARD=1
+KEY_GATE=0        KEY_GONE_DEBOUNCE=20  KEY_HOLD_MAX=180  KEY_STALE=10
+KEY_BOOT_GRACE=60 KEY_READY_TOAST=1   FLASH_DELAY=60   HAZARD_LIVE=0   HAZARD_SECS=3
 ```
 
 `DRY_RUN=1` (the default) logs `WOULD FIRE` and sends **no** lock. Leave it on and watch
 `/data/nemesis/gen5-autolock.log` across several real drives — confirm it would fire only
 on a genuine park-and-exit, and never at boot or while getting in — then set it to `0` to
 actually arm.
+
+---
+
+## 10. Key sensor (optional key gate)
+
+User guide: [key-sensor.md](key-sensor.md). Firmware: [`../esp32/`](../esp32/).
+
+**Pieces.** A BLE tag with a fixed address on the key ring; an ESP32-S3 on the head
+unit's USB port running `key_scanner`, which scans 1.2 s of every 2.5 s and prints
+`KEY 1 <rssi> …` (heard), `KEY 0 …` (listened the whole window, not heard) or `ERR …`
+(didn't provably listen — never counted as absence). `key-reader.sh` (started by the
+daemon when `KEY_GATE=1`, single instance per boot) turns the lines into
+`/data/nemesis/key_state`: last sighting, last beat, feed start, boot id.
+
+**Picking the port.** The reference head unit already has its own `/dev/ttyACM0`/`ttyACM1`
+(its LG Innotek cellular modem, held by `rild`) before any board is plugged in. The reader
+opens a `ttyACM*` **only** if sysfs says its USB vendor is the board's (`KEY_USB_VIDS`,
+default `239a` Adafruit, `303a` Espressif); every other node is skipped and never opened
+or reconfigured.
+
+**The decision** (at the lock point, after `LOCK_DELAY`), one of:
+
+| State | Meaning | Action |
+|---|---|---|
+| OFFLINE | no fresh beat (older than `KEY_STALE`), a file from another boot, garbled | hold (no lock) |
+| NOTAG | the board is alive but has never heard the tag this boot | hold |
+| HERE | heard recently, or not yet `KEY_GONE_DEBOUNCE` of *observed* silence | hold |
+| GONE | the board observed `KEY_GONE_DEBOUNCE` of silence on one unbroken feed **and** the tag was heard within that window before the exit | **lock** |
+
+Silence is measured up to the last beat, never up to "now", so a board that dies or
+reconnects can't fake it: a reconnect restarts the count. A tag that was already quiet
+at the exit (dead battery, keys not on you) proves nothing and holds. The hold is
+non-terminal — the key leaving later still locks — until `KEY_HOLD_MAX` after the exit or
+the head unit's own shutdown (F4), whichever comes first. Every uncertain case holds; the
+sensor never falls back to the timed lock.
+
+**Why 20 s.** Field data on the reference car (2026-11-12 to 11-16): across four long
+drives with the key on the driver, the board heard it on 95–97 % of scans, worst gap
+7.5 s; with the key alone in the cupholder for 3 min, 95 %, worst gap 5 s. The original
+45 s missed real locks: walking out of range plus 45 s often didn't fit in the window
+(F4). At 20 s the walk-away locked 31 s after the door closed.
+
+**Range.** Inside the cabin the tag reads about −54 to −73 dBm. Through a house wall it
+was heard faintly (−85 to −100 dBm, about 40 % of scans) with the car parked against the
+house, which holds the lock. Presence/absence, not an RSSI threshold, is the rule today;
+the signal strengths do separate "in the cabin" from "outside near the car", which a
+future hazard-flash condition can use.
+
+**Hazard flash** (`HAZARD_LIVE`, default 0): `startFindingCar` mode 2 (lights), then mode
+0; never mode 1 (panic). Log-only so far: untested on a car, and it currently fires on
+HERE, which also covers the owner standing next to the car.

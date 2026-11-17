@@ -10,6 +10,9 @@ ref/*.odex
 # Built artifacts (produced by tools/build-package.sh / tools/build-sticks.sh)
 dist/
 
+# Firmware build output (arduino-cli --export-binaries / Arduino IDE)
+esp32/**/build/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

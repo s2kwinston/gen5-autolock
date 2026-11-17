@@ -50,10 +50,19 @@ PYEOF
 }
 
 # --- stage the package tree with the given DRY_RUN seed and zip it ---
-build_pkg() { # <dry_run 0|1> <out-zip>
-    S="$TMP/pkg$1"; rm -rf "$S"; mkdir -p "$S/bin" "$S/scripts" "$S/ref"
+# <force-key-gate>: 1 = the key-sensor variant, whose gen5-autolock.conf.force makes the
+# install hook switch KEY_GATE=1 on in the user's config even on an update.
+build_pkg() { # <dry_run 0|1> <out-zip> [force-key-gate 0|1]
+    S="$TMP/pkg$1-${3:-0}"; rm -rf "$S"; mkdir -p "$S/bin" "$S/scripts" "$S/ref"
     cp "$HERE/package/NEMESIS.data"       "$S/NEMESIS.data"
     cp "$HERE/walkaway.sh"                "$S/walkaway.sh"        # the daemon = service.0
+    cp "$HERE/key-reader.sh"              "$S/key-reader.sh"      # key sensor feed (daemon starts it)
+    if [ "${3:-0}" = 1 ]; then
+        {
+            echo "# key-sensor installer: switched on in your config by the install hook"
+            echo "KEY_GATE=1"
+        } > "$S/gen5-autolock.conf.force"
+    fi
     cp "$HERE/gen5-autolock.conf.example" "$S/gen5-autolock.conf.example"
     cp "$HERE/package/bin/toggle.sh"      "$S/bin/toggle.sh"      # app.0
     cp "$HERE/package/scripts/"*.sh       "$S/scripts/"
@@ -85,8 +94,11 @@ build_pkg 0 "$DIST/gen5.autolock.zip"
 build_stick "$DIST/gen5.autolock.zip" "$DIST/gen5-autolock-install.zip"
 build_pkg 1 "$TMP/gen5.autolock-testmode.zip"
 build_stick "$TMP/gen5.autolock-testmode.zip" "$DIST/gen5-autolock-install-testmode.zip"
+build_pkg 0 "$TMP/gen5.autolock-keysensor.zip" 1
+build_stick "$TMP/gen5.autolock-keysensor.zip" "$DIST/gen5-autolock-install-keysensor.zip"
 
 echo "built: $DIST/gen5.autolock.zip                   (bare LIVE package: nemesis install / Package Store)"
 echo "built: $DIST/gen5-autolock-install.zip          (USB installer — LIVE from the next stop)"
 echo "built: $DIST/gen5-autolock-install-testmode.zip (USB installer — TEST MODE, log only)"
+echo "built: $DIST/gen5-autolock-install-keysensor.zip (USB installer — LIVE + key sensor ON)"
 echo "inspect on the unit with:  nemesis pkg-info gen5.autolock.zip"

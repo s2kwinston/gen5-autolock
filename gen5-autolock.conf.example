@@ -11,8 +11,10 @@
 # built-in default is used instead. Uncomment a line to change it.
 
 # -- the main one: how long after the last door closes before it locks (seconds)
-# LOCK_DELAY=30          # allowed 5–600; keep ≤ ~120 (the car stays lockable ~178 s
-#                        # after the door closes — measured; counted in real seconds)
+# LOCK_DELAY=30          # allowed 5–600; keep it short (≤ ~90). The head unit only stays
+#                        # awake ~3 min from when you open the driver door to get out, and
+#                        # a door held open while you unload uses that time up. Counted in
+#                        # real seconds.
 
 # -- turn the feature off without stopping the daemon (also: touch the off-file,
 #    /data/nemesis/gen5-autolock.off, to pause and delete it to resume)
@@ -41,3 +43,21 @@
 #    log; verified on the 2022 US EV6). 0 = ignore the hood (if your firmware's log
 #    has no "mHoodSwitchState" line, the daemon treats the hood as closed anyway).
 # HOOD_GUARD=1
+
+# -- KEY SENSOR (optional key-inside protection; needs the ESP32 BLE key sensor on the
+#    head unit's USB port — see docs/key-sensor.md). Off by default: nothing below
+#    matters then. The key-sensor installer switches KEY_GATE on for you.
+# KEY_GATE=0             # 1 = lock only after the key tag was heard at the exit and has
+#                        #     then been quiet for KEY_GONE_DEBOUNCE (it LEFT). Still heard,
+#                        #     never heard, or sensor offline = no lock.
+# KEY_GONE_DEBOUNCE=20   # s of silence the sensor must OBSERVE before "the key left", 10–600.
+#                        #     Longest gap seen with the key in the car: 7.5 s. Much longer
+#                        #     and the head unit can fall asleep before it locks.
+# FLASH_DELAY=60         # s after the exit before the "key left inside" hazard flash, 10–600
+# HAZARD_LIVE=0          # leave 0 (log only): the hazard flash is untested on a car, and it
+#                        #     can't yet tell "key inside" from "you standing next to the car"
+# HAZARD_SECS=3          # s the hazards run before the stop command, 1–15
+# KEY_HOLD_MAX=180       # s after the exit to keep waiting for the key to leave, 60–1800
+# KEY_STALE=10           # s without a sensor line before it counts as offline, 3–120
+# KEY_BOOT_GRACE=60      # s after start before an offline/tag warning toast, 10–600
+# KEY_READY_TOAST=1      # 0 = no "key sensor ready" toast

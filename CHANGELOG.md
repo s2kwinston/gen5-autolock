@@ -3,7 +3,95 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.2] - 2026-11-16
+
+The first public release of the optional **key sensor** (key-inside protection). 0.2.0
+and 0.2.1 below were on-car test builds and were not published; their notes describe
+what's included here. Without a sensor nothing changes: `KEY_GATE` stays off and the
+plain installer behaves exactly as 0.1.1.
+
+### Changed
+- **`KEY_GONE_DEBOUNCE` default 45 → 20 s** (key sensor only). On the car, 45 s missed
+  real locks: the head unit only stays awake about 3 minutes from when the driver door
+  opens, and walking out of range plus 45 s of silence often didn't fit. Across four long
+  drives and a 3-minute key-in-the-cupholder test, the longest the board went without
+  hearing a key that was in the car was 7.5 s. At 20 s, the walk-away test locked 31 s
+  after the door closed, and the key-inside test held for the full window.
+- **Timing guidance corrected:** the lockable window is ~3 minutes from the driver door
+  *opening*, not 178 s from it closing, so a door held open while unloading shrinks it,
+  and a lock sent in its last seconds may not take. Keep `LOCK_DELAY` ≤ ~90 (was ≤ ~120).
+- **Docs restructured.** The README is now a short front page; install and settings moved
+  to `docs/install.md`, the FAQ and limitations to `docs/faq.md`, and the key sensor has
+  its own guide, `docs/key-sensor.md` (parts, flashing the board, setup, first tests).
+  `docs/design.md` gains §10 (the key gate) and the updated window measurements.
+- The custom-settings stick no longer offers `HAZARD_LIVE`, and the example config marks
+  it "leave 0": the hazard flash is untested on a car.
+- The get-log stick's `README.txt` now lists every file it copies and warns that the head
+  unit's own logs (`logcat.txt`, `dmesg.txt`) can contain personal details (phone name,
+  Wi-Fi names, location, VIN); check them before sharing.
+
+### Added
+- **ESP32 firmware** (`esp32/key_scanner`) with build notes (`esp32/README.md`). You set
+  your own tag's address (`TAG_ADDRESS`, upper or lower case); until it's set, the board
+  reports nothing and the car fails safe. Tested board: Adafruit QT Py ESP32-S3
+  (4 MB / 2 MB PSRAM); it also builds for the Waveshare ESP32-S3 Mini (untested on a car).
+  The scanning logic is what ran on the test car; the address handling is new for
+  publishing and so far compile-checked only.
+
+### Known issues
+- After you get out, reopening a **different** door (passenger or rear) makes it wait for
+  the driver door to open and close again; if that doesn't happen, it won't lock that stop.
+- With the sensor, the board can hear keys faintly through a house wall when the car is
+  parked right outside, and then holds the lock.
+- The hazard flash would also fire while you stand next to the car (it can't yet tell
+  that from a key left inside). It stays log-only (`HAZARD_LIVE=0`).
+- The "key sensor ready" message accepts a reading up to 10 s old, so it can appear if the
+  board is unplugged just before the car starts. The lock decision has the same limit.
+- The board's history (`key_trace.log*`) keeps only the first hour after each start.
+
+## [0.2.1] - 2026-11-13
+
+### Fixed
+- **The key reader could open a serial port that isn't the sensor.** This head unit
+  already has `/dev/ttyACM0`/`ttyACM1` (and `ttyUSB0-2`) before any board is plugged
+  in. 0.2.0 opened `/dev/ttyACM0` by default, so it could read and reconfigure one of
+  those ports instead of the sensor. On the first on-car run it never saw the sensor;
+  the daemon read the feed as offline and did not lock.
+  The reader now opens only a `/dev/ttyACM*` whose USB device has the sensor's vendor id
+  (`KEY_USB_VIDS`, default `239a 303a`), checked in sysfs before every open; every other
+  node is skipped, never opened, and logged once with its vendor id and product name.
+- Updating now stops the previous install's running key reader (only a process whose
+  command line names `key-reader.sh`); restart the autolock service to start the new one.
+
+### Added
+- The get-log stick also saves key-sensor USB diagnostics: USB devices and their
+  drivers, which device owns each serial node, which process holds each one open, plus
+  `dmesg` and `logcat`.
+
+## [0.2.0] - 2026-11-13
+
+Optional key-inside protection: an ESP32 BLE key sensor on the head unit's USB port.
+Off by default (`KEY_GATE=0`): with no sensor, nothing changes.
+
+### Added
+- **Key gate (`KEY_GATE=1`).** The lock fires only once the key tag on your key ring
+  was heard at the exit and the sensor has then OBSERVED `KEY_GONE_DEBOUNCE` (45 s) of
+  silence on one unbroken feed, i.e. the key LEFT. It never locks while the tag is
+  heard, when the tag was never heard this boot, when it was already silent at the exit
+  (dead tag battery, key not on you), across a sensor dropout or reconnect, or when the
+  sensor is offline, stale or its data comes from a previous boot. The hold is
+  non-terminal (a key that leaves later still locks) but ends `KEY_HOLD_MAX` (180 s)
+  after the exit.
+- `key-reader.sh`: reads the sensor's serial lines into `/data/nemesis/key_state`. The
+  daemon starts it when `KEY_GATE=1` (single instance per boot). It logs first-light
+  diagnostics (cdc_acm driver present, USB devices seen, connect/disconnect).
+- On-screen messages via the head unit's own toast: one "key sensor ready" per boot, and
+  a warning while you are still driving if the sensor is offline or the tag isn't heard.
+- Key-left-inside hazard flash (lights only, `startFindingCar` mode 2 then stop). Dry-run
+  until `HAZARD_LIVE=1`; never the panic alarm (mode 1).
+- ESP32 firmware lives outside the head-unit package (`esp32/`, published in 0.2.2).
+- `gen5-autolock-install-keysensor.zip`: the LIVE installer that also turns the key gate
+  on in your existing config (an ordinary update never changes your settings).
 
 ### Changed
 - Docs: NEMESIS Manager navigation updated for 1.16 (**My Packages** → Gen5 Auto-Lock →
@@ -130,5 +218,6 @@ battle-hardened.
   with them open, like stock. A fob shut in the frunk is still a lockout (the hood hold
   only applies while the hood is open).
 
+[0.2.2]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.2.2
 [0.1.1]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s2kwinston/gen5-autolock/releases/tag/v0.1.0

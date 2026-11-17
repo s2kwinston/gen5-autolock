@@ -11,11 +11,14 @@ Built from the repo by `tools/build-package.sh`, which assembles this tree and z
 ```
 NEMESIS.data                 declares the service + the toggle app + lifecycle hooks
 walkaway.sh                  the daemon (service.0, kind=sh, mode=background)
+key-reader.sh                the optional key-sensor feed (the daemon starts it when KEY_GATE=1)
 bin/toggle.sh                the toggle app (app.0) — pause/resume
 scripts/{pre,post,preun,postun}.sh   install/uninstall hooks
 gen5-autolock.conf.example   the documented settings template
 gen5-autolock.conf.seed      written by the build: DRY_RUN=0 (standard) or 1 (test-mode)
                              — copied to /data/nemesis/gen5-autolock.conf on a FRESH install
+gen5-autolock.conf.force     key-sensor installer only: KEY_GATE=1, merged into the
+                             existing config on every install/update
 ref/README.md                how the framework hash gate works / pinning another firmware
 ```
 
@@ -30,11 +33,15 @@ registers the service too.
 tools/build-package.sh
 #  -> dist/gen5-autolock-install.zip           USB installer, LIVE from the next stop
 #  -> dist/gen5-autolock-install-testmode.zip  USB installer, TEST MODE (log only)
+#  -> dist/gen5-autolock-install-keysensor.zip USB installer, LIVE + key sensor ON
 #  -> dist/gen5.autolock.zip                   bare LIVE package (shell install / Package Store)
 ```
 
-Needs `zip` or a working Python. The two installer zips are finished USB sticks: extract
-one to the root of a stick and insert. They differ only in the seeded `DRY_RUN` value.
+Needs `zip` or a working Python. The three installer zips are finished USB sticks:
+extract one to the root of a stick and insert. The standard and test-mode ones differ
+only in the seeded `DRY_RUN` value; the key-sensor one is the standard one plus a
+`gen5-autolock.conf.force` that switches `KEY_GATE=1` on (see
+[`docs/key-sensor.md`](../docs/key-sensor.md)).
 
 ## Install (USB)
 
